@@ -2,7 +2,7 @@ from decimal import Decimal
 
 from django.core.exceptions import ValidationError
 from django.db import transaction
-from django.db.models import Sum
+from django.db.models import Sum, F
 from django.utils import timezone
 
 from werkstatt.models import Invoice, InvoiceArticle, RepairOrderArticle, StockArticle, \
@@ -71,7 +71,7 @@ class InvoiceCreationService:
 
         # Delete the RepairOrder
         order.delete()
-        return invoice
+        return None
 
 
 class InventoryService:
@@ -261,3 +261,4 @@ class RepairOrderHandler:
 
         roa.quantity += added_quantity
         roa.save(update_fields=['quantity'])
+        return None
