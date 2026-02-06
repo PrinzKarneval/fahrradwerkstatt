@@ -5,8 +5,8 @@ from django.db.models import F
 from django.utils import timezone
 
 from werkstatt.models import Invoice, InvoiceArticle, RepairOrderArticle, StockArticle, StockArticleReservation, \
-    StockArticleRequest, RepairOrderService, WorkRate, InvoiceService, RepairOrder
-
+    StockArticleRequest, RepairOrderService, WorkRate, InvoiceService, RepairOrder, SupplyOrder, SupplyOrderArticle, \
+    SupplyOrderArticleReceived, Article
 
 RESERVATION_RESERVED = 1
 RESERVATION_INSTALLED = 2
@@ -212,19 +212,44 @@ class RepairOrderHandler:
             roa.delete()
 
 
-"""
-class ReservationHandler:
+class SupplyOrderHandler:
+    @staticmethod
+    @transaction.atomic
+    def receive_article(supply_order: SupplyOrder, article: Article, quantity: int) ->  None:
+        SupplyOrderArticleReceived.objects.select_for_update().create(
+            supply_order=supply_order, article=article, delivered=timezone.now().date(), quantity=quantity)
 
-    def complete(self):
-        if self.stock_article.quantity < self.quantity:
-            raise ValueError("Stock article quantity must be greater than stock article quantity")
+class StockArticleHandler:
+    @staticmethod
+    @transaction.atomic
+    def fulfill_requests(stock_article: StockArticle) -> None:
+        """
+        Convert pending requests to reservations if stock is now available.
+        """
+        # Lock the stock row
+        sa = StockArticle.objects.select_for_update().get(pk=stock_article.pk)
+        available_quantity = sa.get_available_quantity()
 
-        self.stock_article.quantity -= self.quantity
-        self.stock_article.save()
-        self.status = RESERVATION_INSTALLED
-        self.save()
+        if available_quantity <= 0:
+            return
 
-    def cancel(self):
-        self.status = RESERVATION_CANCELLED
-        self.save(update_fields=["status"])
-"""
+        requests = (StockArticleRequest.objects.select_for_update().filter(stock_article=sa).order_by('created'))
+
+        for req in requests:
+            if available_quantity <= 0:
+                break
+
+            fulfill_quantity = min(req.quantity, available_quantity)
+            reservation, created = StockArticleReservation.objects.select_for_update().get_or_create(
+                repair_order_article=req.repair_order_article,
+                stock_article=sa,
+                defaults={'quantity': 0}
+            )
+            StockArticleReservation.objects.filter(pk=reservation.pk).update(quantity=F('quantity') + fulfill_quantity)
+            StockArticleRequest.objects.filter(pk=req.pk).update(quantity=F('quantity') - fulfill_quantity)
+
+            req.refresh_from_db()
+            if req.quantity <= 0:
+                req.delete()
+
+            available_quantity -= fulfill_quantity

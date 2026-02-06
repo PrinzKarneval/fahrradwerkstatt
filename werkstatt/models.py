@@ -133,6 +133,7 @@ class StockArticle(models.Model):
     article = models.ForeignKey(Article, models.PROTECT)
     minimum = models.PositiveSmallIntegerField(default=0, validators=[MinValueValidator(0)])
     quantity = models.PositiveSmallIntegerField(default=0, validators=[MinValueValidator(0)])
+    buying_price = models.DecimalField(max_digits=7, decimal_places=2, validators=[MinValueValidator(0)], default=0)
 
     def __str__(self):
         return f"{self.quantity} {self.article}"
@@ -235,36 +236,24 @@ class SupplyOrder(models.Model):
         self.status = SupplyOrder.SUBMITTED
         self.save()
 
-    @transaction.atomic
-    def receive(self) -> None:
-        if self.status == self.RECEIVED:
-            return
-
-        now = timezone.now().date()
-
-        for pos in self.articles.all():
-            stock, _ = StockArticle.objects.select_for_update().get_or_create(
-                article=pos.article,
-                defaults={"quantity": 0}
-            )
-            stock.quantity += pos.quantity
-            stock.save()
-
-        self.delivered = now
-        self.status = self.RECEIVED
-        self.save()
-
 
 class SupplyOrderArticle(models.Model):
-    order = models.ForeignKey(SupplyOrder, models.CASCADE, related_name='articles')
+    order = models.ForeignKey(SupplyOrder, models.CASCADE, related_name='positions')
     article = models.ForeignKey(Article, models.PROTECT)
     quantity = models.PositiveSmallIntegerField(default=0, validators=[MinValueValidator(0)])
 
+    def get_fully_delivered(self):
+        return sum(map(
+            lambda soar: soar.quantity,
+            self.order.received_articles.filter(article=self.article))
+        ) >= self.quantity
+
 
 class SupplyOrderArticleReceived(models.Model):
-    soa = models.ForeignKey(SupplyOrder, models.CASCADE, related_name='received_articles')
+    supply_order = models.ForeignKey(SupplyOrder, models.CASCADE, related_name='received_articles')
+    article = models.ForeignKey(Article, models.PROTECT)
     delivered = models.DateField(blank=True, null=True)
-    quantity = models.PositiveSmallIntegerField(default=0, validators=[MinValueValidator(0)])
+    quantity = models.PositiveSmallIntegerField(default=1, validators=[MinValueValidator(1)])
 
 
 class Address(models.Model):
