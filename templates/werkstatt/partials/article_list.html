@@ -1,0 +1,12 @@
+{% if articles %}
+
+<label for="article">Article:</label>
+<select class="form-control" name="article" id="article">
+  <option value="">-- Artikel wählen --</option>
+  {% for m in articles %}
+    <option value="{{ m.id }}">{{ m.name }}</option>
+  {% endfor %}
+</select>
+{% else %}
+  <p>No articles found.</p>
+{% endif %}

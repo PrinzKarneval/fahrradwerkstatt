@@ -1,0 +1,13 @@
+{% extends "workshop/base.html" %}
+
+{% block content %}
+  <h1>{{ title }}</h1>
+  <p>Willst du {{ object }} wirklich entfernen"?</p>
+  <form method="post">
+    {% csrf_token %}
+    {{ form.as_p }}
+    <button class="btn btn-danger" type="submit">Löschen</button>
+    <a class="btn btn-secondary" href="{% url 'repair_order_detail' object.order.pk %}">Abbrechen</a>
+  </form>
+
+{% endblock content %}

@@ -1,0 +1,25 @@
+{% extends "workshop/base.html" %}
+{% block content %}
+<h1>Bestellungen</h1>
+<a class="btn btn-primary" href="{% url 'supply_order_create' shop.pk %}">Bestellung erstellen</a>
+<table class="table table-hover">
+    <thead>
+    <tr>
+        {% for c in columns %}
+        <th>{{c.name|cut:"_"|capfirst}}</th>
+        {% endfor %}
+        <th></th>
+    </tr>
+    </thead>
+    <tbody>
+    {% for object in object_list %}
+    <tr>
+        <td></td>
+    </tr>
+    {% empty %}
+    {% endfor %}
+    </tbody>
+    <tfoot></tfoot>
+</table>
+
+{% endblock content %}

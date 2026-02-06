@@ -1,0 +1,82 @@
+<!DOCTYPE html>
+{% load static %}
+{% load django_bootstrap5 %}
+{% bootstrap_css %}
+<html lang="de">
+  <head>
+    <meta charset="UTF-8">
+    <title>{% block title %}Workshop Rechnung drucken{% endblock %}</title>
+  </head>
+  <body>
+
+<div class="container-fluid">
+    <div class="row">
+        <div class="col text-end">
+            <p>Bikeshop Sandberg<br>90419 Nürnberg<br>Helmstraße 43</p>
+            <p>Rechnungsdatum: {{object.date_paid}}<br>
+            Rechnungsnummer: {{object.pk}}</p>
+        </div>
+    </div>
+    <div class="row mb-5">
+        <div class="col">
+            <p>
+                {{object.customer}}<br>
+                {{object.customer.postal}} {{object.customer.city}}<br>
+                {{object.customer.street}} {{object.customer.str_no}}
+            </p>
+        </div>
+    </div>
+
+
+    <h1>Rechnung</h1>
+    <p>
+        Seriennummer: {{object.serial_number}}<br>
+        Beschreibung: {{object.description}}
+    </p>
+
+    <table class="table table-hover">
+        <tr class="text-end">
+            <th class="text-start">Services</th>
+            <th>Anzahl</th>
+            <th>Preis</th>
+            <th>Gesamt</th>
+        </tr>
+        {% for s in object.invoiceservice_set.all %}
+        <tr class="text-end">
+            <td class="text-start">{{s.name}}</td>
+            <td>{{s.quantity}}</td>
+            <td>{{s.price}} €</td>
+            <td>{{s.get_total}} €</td>
+        </tr>
+        {% endfor %}
+        <tr class="text-end">
+            <th class="border-0" colspan="4">Preis Services: {{object.get_total_services}} €</th>
+        </tr>
+        <tr class="text-end">
+            <th colspan="4" class="text-start">Teile</th>
+        </tr>
+        {% for a in object.invoicearticle_set.all %}
+        <tr class="text-end">
+            <td class="text-start">
+                {{a.manufacturer}} {{a.name}}
+            </td>
+            <td>{{a.quantity}}</td>
+            <td>{{a.price}} €</td>
+            <td>{{a.get_total}} €</td>
+        </tr>
+        {% endfor %}
+        <tr class="text-end">
+            <th class="border-0" colspan="4">Preis Artikel: {{object.get_total_articles}} €</th>
+        </tr>
+        <tr class="text-end">
+            <th colspan="3">Gesamtpreis</th>
+            <th>{{object.get_total}}</th>
+        </tr>
+    </table>
+</div>
+    </div>
+    <!-- Bootstrap JavaScript -->
+    <script src="{% static 'js/bootstrap.bundle.min.js' %}"></script>
+    <script src="https://cdn.jsdelivr.net/npm/htmx.org@2.0.7/dist/htmx.min.js"></script>
+  </body>
+</html>

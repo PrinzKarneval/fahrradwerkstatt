@@ -1,0 +1,37 @@
+{% extends "workshop/base.html" %}
+{% load custom_filters %}
+{% block content %}
+<h1>{{title}}</h1>
+<a class="btn btn-primary" href="{{create_link}}">{{create_name}}</a>
+<table class="table table-hover">
+    <thead>
+    <tr>
+        {% for c in columns %}
+        <th>{{c.name|cut:"_"|capfirst}}</th>
+        {% endfor %}
+        <th></th>
+    </tr>
+    </thead>
+    <tbody>
+    {% for object in object_list %}
+    <tr>
+        {% for c in columns %}
+        <td>
+        {% if c.name == 'email' %}<a href="mailto:{{ object|getobjectattr:c.name }}">{{ object|getobjectattr:c.name }}</a>
+        {% elif c.name == 'phone' %}<a href="tel:{{ object|getobjectattr:c.name }}">{{ object|getobjectattr:c.name }}</a>
+        {% else %}{{ object|getobjectattr:c.name }}
+        {% endif %}
+        </td>
+        {% endfor %}
+        <td><a href="{% url 'customer_detail' object.pk %}">Öffnen</a></td>
+    </tr>
+    {% empty %}
+    <tr>
+        <td colspan="{{num_fields}}">No customer yet.</td>
+    </tr>
+    {% endfor %}
+    </tbody>
+    <tfoot></tfoot>
+</table>
+
+{% endblock content %}

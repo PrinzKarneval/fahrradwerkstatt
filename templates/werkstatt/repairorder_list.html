@@ -1,0 +1,36 @@
+{% extends "base.html" %}
+{% block content %}
+<h1>{{title}}</h1>
+<table class="table table-hover">
+    <thead>
+    <tr>
+        <th>#</th>
+        <th>Fahrrad</th>
+        <th>Farbe</th>
+        <th>Erstellt</th>
+        <th>Fertig</th>
+        <th>Kunde</th>
+        <th></th>
+    </tr>
+    </thead>
+    <tbody>
+    {% for object in object_list %}
+    <tr>
+        <td>{{ object.id }}</td>
+        <td>{{ object.bike_model }}</td>
+        <td>{{ object.color }}</td>
+        <td>{{ object.date_created }}</td>
+        <td>{{ object.date_finished }}</td>
+        <td>{{ object.customer }}</td>
+        <td><a href="{% url 'repair_order_detail' object.pk %}">Öffnen</a></td>
+    </tr>
+    {% empty %}
+    <tr>
+        <td colspan="{{num_fields}}">Noch keine Aufträge vorhanden. Aufträge werden im Kundenmenü erstellt.</td>
+    </tr>
+    {% endfor %}
+    </tbody>
+    <tfoot></tfoot>
+</table>
+
+{% endblock content %}

@@ -1,0 +1,89 @@
+{% extends "base.html" %}
+{% block content %}
+<a class="btn btn-secondary btn-sm" href="{% url 'customer_list' %}">Zurück</a>
+
+<h1>{{customer}} [{{customer.pk}}]</h1>
+<div class="row">
+    <div class="col">
+        <p>
+            {{customer.phone}}<br>
+            {{customer.email}}
+        </p>
+    </div>
+    <div class="col">
+        <p>
+            {{customer.postal}}
+            {{customer.city}}<br>
+            {{customer.street}}
+            {{customer.str_no}}</p>
+    </div>
+</div>
+<a class="btn btn-outline-warning" href="{% url 'customer_update' object.pk %}"><i class="bi bi-pencil"></i></a>
+<a class="btn btn-outline-primary" href="mailto: {{customer.email}}"><i class="bi bi-envelope"></i></a>
+<a class="btn btn-outline-primary" href="tel: {{customer.phone}}"><i class="bi bi-telephone"></i></a>
+
+<a class="btn btn-primary" href="{% url 'repair_order_create' customer.pk %}">Neuer Auftrag</a>
+{% if customer.repairorder_set.all %}
+<h2 class="mt-5">Aufträge</h2>
+<table class="table table-hover">
+    <thead>
+    <tr>
+        <th>#</th>
+        <th>Rad</th>
+        <th>Farbe</th>
+        <th>Erstellt</th>
+        <th>Fertig</th>
+        <th></th>
+    </tr>
+    </thead>
+    <tbody>
+    {% for order in customer.repairorder_set.all %}
+    <tr>
+        <td>{{order.pk}}</td>
+        <td>{{order.bike_model}}</td>
+        <td>{{order.color}}</td>
+        <td>{{order.date_created}}</td>
+        <td>{{order.date_finished}}</td>
+        <td><a href="{% url 'repair_order_detail' order.pk %}"><i class="bi bi-box-arrow-in-right"></i></a></td>
+    </tr>
+    </tbody>
+    <tfoot></tfoot>
+    {% endfor %}
+</table>
+{% endif %}
+
+
+{% if not object.invoice_set.all %}
+<p>Keine Rechnungen vorhanden.</p>
+{% else %}
+<h2 class="mt-5">Rechnungen</h2>
+<table class="table table-hover">
+    <thead>
+    <tr>
+        <th>#</th>
+        <th>Rechnungsdatum</th>
+        <th>Rad</th>
+        <th>Farbe</th>
+        <th>Betrag</th>
+        <th></th>
+    </tr>
+    </thead>
+    <tbody>
+    {% for invoice in customer.invoice_set.all %}
+    <tr>
+        <td>{{invoice.pk}}</td>
+        <td>{{invoice.date_paid}}</td>
+        <td>{{invoice.bike_model}}</td>
+        <td>{{invoice.color}}</td>
+        <td>{{invoice.get_total}} €</td>
+        <td><a href="{% url 'invoice_detail' invoice.pk %}"><i class="bi bi-box-arrow-in-right"></i></a></td>
+    </tr>
+    </tbody>
+    <tfoot>
+
+    </tfoot>
+    {% endfor %}
+</table>
+{% endif %}
+
+{% endblock content %}

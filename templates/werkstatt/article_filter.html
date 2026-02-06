@@ -1,0 +1,65 @@
+{% extends "workshop/base.html" %}
+{% load custom_filters %}
+{% block content %}
+
+<a class="btn btn-sm btn-secondary" href="{{back_link}}">Zurück</a>
+<h1>{{title}}</h1>
+
+<form id="filter-form" method="post" action="{% url 'submit_article' pk %}">
+    {% csrf_token %}
+
+    <!-- ArticleType Select -->
+    <label for="type">Gruppe:</label>
+    <select class="form-control" name="type" id="type"
+            hx-get="{% url 'filter_manufacturers' %}"
+            hx-target="#manufacturer-select"
+            hx-trigger="change"
+            hx-swap="innerHTML"
+            hx-on="htmx:afterRequest: this.dispatchEvent(new Event('change'))">
+        <option value="">-- Gruppe wählen --</option>
+        {% for t in types %}
+        <option value="{{ t.id }}">{{ t.name }}</option>
+        {% endfor %}
+    </select>
+
+    <!-- Manufacturer Select -->
+    <div id="manufacturer-select"></div>
+
+    <!-- Articles List -->
+    <div id="articles-list"
+         hx-get="{% url 'filter_articles' %}"
+         hx-trigger="change from:#type, change from:#manufacturer"
+         hx-include="#type, #manufacturer"
+         hx-swap="innerHTML">
+    </div>
+
+    <!-- Submit Button -->
+    <div id="submit-div" class="mt-3" style="display:none;">
+        <button class="btn btn-primary" type="submit">Artikel hinzufügen</button>
+    </div>
+</form>
+
+<script>
+    document.addEventListener('htmx:afterSwap', (event) => {
+        // Only run if the swap was for the articles list
+        if (event.target.id === 'articles-list') {
+            const select = document.querySelector('#article');
+            const submitDiv = document.querySelector('#submit-div');
+
+            if (select) {
+                // Hide initially
+                submitDiv.style.display = 'none';
+
+                // Show submit button when a valid article is selected
+                select.addEventListener('change', () => {
+                    if (select.value) {
+                        submitDiv.style.display = 'block';
+                    } else {
+                        submitDiv.style.display = 'none';
+                    }
+                });
+            }
+        }
+    });
+</script>
+{% endblock %}

@@ -1,0 +1,13 @@
+<div class="my-3">
+    <label for="manufacturer">Hersteller:</label>
+    <select class="form-control" name="manufacturer" id="manufacturer"
+            hx-get="{% url 'filter_articles' %}"
+            hx-target="#articles-list"
+            hx-trigger="change"
+            hx-include="#type">
+        <option value="">-- Hersteller wählen --</option>
+        {% for m in manufacturers %}
+        <option value="{{ m.id }}">{{ m.name }}</option>
+        {% endfor %}
+    </select>
+</div>
