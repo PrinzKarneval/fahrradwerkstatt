@@ -98,12 +98,23 @@ class RepairOrderPricingService:
 class RepairOrderHandler:
     @staticmethod
     @transaction.atomic
-    def add_new_roa_to_order(ro: RepairOrder, sa: StockArticle, quantity: int) -> None:
+    def update_quantity(ro: RepairOrder, sa: StockArticle, quantity: int) -> None:
         roa, created = RepairOrderArticle.objects.get_or_create(order=ro, stock_article=sa)
-        RepairOrderHandler.roa_increase_quantity(roa, quantity)
+        difference = quantity - roa.quantity
+        if difference > 0:
+            RepairOrderHandler._roa_increase_quantity(roa, quantity)
+        elif difference < 0:
+            RepairOrderHandler._roa_reduce_quantity(roa, quantity)
+        return None
+
 
     @staticmethod
-    def roa_increase_quantity(roa: RepairOrderArticle, new_quantity: int) -> None:
+    @transaction.atomic
+    def _roa_increase_quantity(roa: RepairOrderArticle, new_quantity: int) -> None:
+        """
+        Increase the quantity of a ROA to a higher value.
+        Adjust reservations first, then requested quantities.
+        """
         added_quantity = new_quantity - roa.quantity
         if added_quantity <= 0:
             return None
@@ -138,6 +149,68 @@ class RepairOrderHandler:
         roa.quantity += added_quantity
         roa.save(update_fields=['quantity'])
         return None
+
+    @staticmethod
+    @transaction.atomic
+    def _roa_reduce_quantity(roa: RepairOrderArticle, new_quantity: int) -> None:
+        """
+        Reduce the quantity of a ROA to a smaller value.
+        Adjust requested quantities first, then reserved quantities.
+        """
+        if new_quantity >= roa.quantity:
+            # No reduction needed
+            return
+
+        reduction = roa.quantity - new_quantity
+
+        # Lock stock row
+        sa = StockArticle.objects.select_for_update().get(pk=roa.stock_article_id)
+
+        # Lock related request and reservation rows
+        requested = (
+            StockArticleRequest.objects.select_for_update()
+            .filter(repair_order_article=roa, stock_article=sa)
+            .first()
+        )
+        reservation = (
+            StockArticleReservation.objects.select_for_update()
+            .filter(repair_order_article=roa, stock_article=sa)
+            .first()
+        )
+
+        # Reduce requested quantity first
+        if requested:
+            reduce_request = min(requested.quantity, reduction)
+            if reduce_request > 0:
+                StockArticleRequest.objects.filter(pk=requested.pk).update(
+                    quantity=F('quantity') - reduce_request
+                )
+                reduction -= reduce_request
+            # Delete request if quantity reaches 0
+            requested.refresh_from_db()
+            if requested.quantity <= 0:
+                requested.delete()
+
+        # Reduce reservation if reduction still remains
+        if reduction > 0 and reservation:
+            reduce_reserve = min(reservation.quantity, reduction)
+            if reduce_reserve > 0:
+                StockArticleReservation.objects.filter(pk=reservation.pk).update(
+                    quantity=F('quantity') - reduce_reserve
+                )
+                reduction -= reduce_reserve
+            # Delete reservation if quantity reaches 0
+            reservation.refresh_from_db()
+            if reservation.quantity <= 0:
+                reservation.delete()
+
+        # Update the ROA quantity
+        roa.quantity = new_quantity
+        roa.save(update_fields=['quantity'])
+        roa.refresh_from_db()
+        if roa.quantity <= 0:
+            roa.delete()
+
 
 """
 class ReservationHandler:
