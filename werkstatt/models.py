@@ -190,19 +190,6 @@ class StockArticleReservation(models.Model):
     quantity = models.PositiveSmallIntegerField(validators=[MinValueValidator(1)])
     status = models.PositiveSmallIntegerField(choices=STATUS, default=RESERVATION_RESERVED)
 
-    def complete(self):
-        if self.stock_article.quantity < self.quantity:
-            raise ValueError("Stock article quantity must be greater than stock article quantity")
-
-        self.stock_article.quantity -= self.quantity
-        self.stock_article.save()
-        self.status = RESERVATION_INSTALLED
-        self.save()
-
-    def cancel(self):
-        self.status = RESERVATION_CANCELLED
-        self.save(update_fields=["status"])
-
     def clean(self):
         # Stelle sicher, dass der Artikel identisch ist
         if self.repair_order_article.stock_article != self.stock_article:

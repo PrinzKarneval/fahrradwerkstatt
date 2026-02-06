@@ -1,13 +1,12 @@
 from decimal import Decimal
 
-from django.core.exceptions import ValidationError
 from django.db import transaction
-from django.db.models import Sum, F
+from django.db.models import F
 from django.utils import timezone
 
-from werkstatt.models import Invoice, InvoiceArticle, RepairOrderArticle, StockArticle, \
-    StockArticleReservation, StockArticleRequest, RepairOrderService, WorkRate, InvoiceService, SupplyOrderArticle, \
-    RepairOrder
+from werkstatt.models import Invoice, InvoiceArticle, RepairOrderArticle, StockArticle, StockArticleReservation, \
+    StockArticleRequest, RepairOrderService, WorkRate, InvoiceService, RepairOrder
+
 
 RESERVATION_RESERVED = 1
 RESERVATION_INSTALLED = 2
@@ -72,129 +71,6 @@ class InvoiceCreationService:
         # Delete the RepairOrder
         order.delete()
         return None
-
-
-class InventoryService:
-    @staticmethod
-    @transaction.atomic
-    def adjust_requests_reservations(instance):
-        if not instance.pk:
-            return  # neues Objekt, nichts zu tun
-
-        old_instance = RepairOrderArticle.objects.get(pk=instance.pk)
-        if instance.quantity >= old_instance.quantity:
-            return  # Menge erhöht oder gleich, nichts zu tun
-
-        delta = old_instance.quantity - instance.quantity
-
-        # Prüfen, ob schon bestellt
-        already_ordered = SupplyOrderArticle.objects.filter(
-            article=instance.stock_article.article,
-            order__delivered__isnull=True
-        ).exists()
-        if already_ordered:
-            return
-
-        # Requests reduzieren
-        requests = StockArticleRequest.objects.filter(repair_order_article=instance).order_by('-quantity')
-        for r in requests:
-            if delta <= 0:
-                break
-            if r.quantity <= delta:
-                delta -= r.quantity
-                r.delete()
-            else:
-                r.quantity -= delta
-                r.save(update_fields=['quantity'])
-                delta = 0
-
-        # Reservations reduzieren
-        total_reserved = instance.reservations.aggregate(total=Sum('quantity'))['total'] or 0
-        if total_reserved > instance.quantity:
-            over = total_reserved - instance.quantity
-            reservations = instance.reservations.all().order_by('-quantity')
-            for res in reservations:
-                if over <= 0:
-                    break
-                if res.quantity <= over:
-                    over -= res.quantity
-                    res.delete()
-                else:
-                    res.quantity -= over
-                    res.save(update_fields=['quantity'])
-                    over = 0
-
-    @staticmethod
-    @transaction.atomic
-    def reserve_articles(roa: RepairOrderArticle) -> dict | None:
-        """
-        Prüft den aktuellen Bestand und passt Reservations / Requests automatisch an.
-        Die Methode ist idempotent: mehrfache Aufrufe erzeugen keine Überbuchungen.
-        """
-        if roa.installed:
-            return None
-
-        already_requested = roa.get_requested_quantity()
-        already_reserved = roa.get_reserved_quantity()
-        missing = roa.quantity - (already_reserved + already_requested)
-
-        if missing <= 0:
-            return {
-                'REQUESTED': already_requested,
-                'RESERVED': already_reserved,
-                'NEW_RESERVATIONS': 0,
-                'NEW_REQUESTS': 0,
-            }
-
-        # Aktuelle StockArticle Daten sperren
-        stock_article = StockArticle.objects.select_for_update().get(pk=roa.stock_article.pk)
-        available_quantity = stock_article.get_available_quantity()
-
-        new_reservations = 0
-        new_requests = 0
-
-        if available_quantity > 0:
-            reserve_now = min(missing, available_quantity)
-            StockArticleReservation.objects.create(
-                repair_order_article=roa,
-                stock_article=roa.stock_article,
-                quantity=reserve_now
-            )
-            new_reservations = reserve_now
-            missing -= reserve_now
-
-        if missing > 0:
-            StockArticleRequest.objects.create(
-                repair_order_article=roa,
-                stock_article=roa.stock_article,
-                quantity=missing
-            )
-            new_requests = missing
-
-        return {
-            'REQUESTED': already_requested + new_requests,
-            'RESERVED': already_reserved + new_reservations,
-            'NEW_RESERVATIONS': new_reservations,
-            'NEW_REQUESTS': new_requests,
-        }
-
-    @staticmethod
-    @transaction.atomic
-    def install_articles(roa: RepairOrderArticle):
-        if not roa.all_parts_available():
-            raise ValidationError('Quantity is not fully available yet')
-        if roa.stock_article.quantity < roa.quantity:
-            raise ValidationError('Stock is insufficient')
-
-        remaining = roa.quantity
-        for reservation in roa.reservations.filter(status=RESERVATION_RESERVED):
-            if remaining <= 0:
-                break
-            reservation.complete()
-            remaining -= reservation.quantity
-
-        roa.installed = True
-        roa.save()
 
 
 class RepairOrderPricingService:
@@ -262,3 +138,20 @@ class RepairOrderHandler:
         roa.quantity += added_quantity
         roa.save(update_fields=['quantity'])
         return None
+
+"""
+class ReservationHandler:
+
+    def complete(self):
+        if self.stock_article.quantity < self.quantity:
+            raise ValueError("Stock article quantity must be greater than stock article quantity")
+
+        self.stock_article.quantity -= self.quantity
+        self.stock_article.save()
+        self.status = RESERVATION_INSTALLED
+        self.save()
+
+    def cancel(self):
+        self.status = RESERVATION_CANCELLED
+        self.save(update_fields=["status"])
+"""
