@@ -3,13 +3,13 @@ from decimal import Decimal
 from django.core.exceptions import ValidationError
 from django.core.validators import MinValueValidator
 from django.db import models, transaction
-from django.db.models import Sum
+from django.db.models import Sum, F
 from django.utils import timezone
 
 
 def decimal_field_default():
     return models.DecimalField(
-        default=Decimal("0.00"),
+        default=Decimal('0.00'),
         max_digits=10,
         decimal_places=2,
         validators=[MinValueValidator(0)]
@@ -17,10 +17,10 @@ def decimal_field_default():
 
 
 class MovementType(models.IntegerChoices):
-    IN = 1, "Zugang"
-    OUT = 2, "Abgang"
-    RESERVED = 3, "Reserviert"
-    USED = 4, "Verwendet"
+    IN = 1, 'Zugang'
+    OUT = 2, 'Abgang'
+    RESERVED = 3, 'Reserviert'
+    USED = 4, 'Verwendet'
 
 
 class Manufacturer(models.Model):
@@ -41,7 +41,7 @@ class Vendor(models.Model):
     phone = models.CharField(max_length=25, blank=True, null=True)
     country = models.CharField(max_length=100, default='Deutschland')
     postal = models.CharField(max_length=5)
-    city = models.CharField(max_length=50, default="Nürnberg")
+    city = models.CharField(max_length=50, default='Nürnberg')
     street = models.CharField(max_length=100)
     str_no = models.CharField(max_length=20)
 
@@ -60,7 +60,7 @@ class ArticleType(models.Model):
     name = models.CharField(max_length=100)
 
     class Meta:
-        ordering = ["name"]
+        ordering = ['name']
         verbose_name = 'Artikeltyp'
         verbose_name_plural = 'Artikeltypen'
 
@@ -81,10 +81,10 @@ class AbstractArticle(models.Model):
 
     class Meta:
         abstract = True
-        ordering = ["type", "manufacturer", "name"]
+        ordering = ['type', 'manufacturer', 'name']
 
     def __str__(self):
-        return f"{self.manufacturer} - {self.name}"
+        return f'{self.manufacturer} - {self.name}'
 
 
 class Article(AbstractArticle):
@@ -94,8 +94,43 @@ class Article(AbstractArticle):
         verbose_name = 'Artikel'
         verbose_name_plural = 'Artikel'
 
+    def get_stock_quantity(self) -> int:
+        return self.stock_articles.aggregate(total=Sum('quantity'))['total'] or 0
+
     def get_available_quantity(self) -> int:
-        return self.stock_articles.aggregate(total=Sum("quantity"))["total"] or 0
+        return self.get_stock_quantity() - self.get_reserved_quantity() - self.get_requested_quantity()
+
+    def get_reserved_quantity(self) -> int:
+        '''IMPLEMENT'''
+        return 0
+
+    def get_requested_quantity(self) -> int:
+        '''IMPLEMENT'''
+        return 0
+
+    def get_ordered_quantity(self):
+        return SupplyOrderArticle.objects.filter(
+            order__submitted__isnull=False,
+            order__deliveries__isnull=True,
+            article=self,
+        ).aggregate(total=Sum('quantity'))['total'] or 0
+
+    def get_future_quantity(self) -> int:
+        return self.get_stock_quantity() + self.get_ordered_quantity()
+
+    def get_avg_price(self):
+        agg = (
+            StockArticle.objects
+            .filter(article=self)
+            .aggregate(
+                total_value=Sum(F('price') * F('quantity')),
+                total_qty=Sum('quantity'),
+            )
+        )
+        if not agg['total_qty']:
+            return 0
+
+        return round(agg['total_value'] / agg['total_qty'], 2)
 
 
 class StockArticle(models.Model):
@@ -111,15 +146,15 @@ class StockArticle(models.Model):
 
     def clean(self):
         if self.quantity < 0:
-            raise ValidationError("Bestand darf nicht negativ sein.")
+            raise ValidationError('Bestand darf nicht negativ sein.')
 
 
 class StockMovement(models.Model):
-    """
+    '''
     Unveränderliches Lagerjournal.
     Jede Bestandsänderung MUSS hier dokumentiert werden.
-    """
-    stock_article = models.ForeignKey(StockArticle, on_delete=models.PROTECT, related_name="movements")
+    '''
+    stock_article = models.ForeignKey(StockArticle, on_delete=models.PROTECT, related_name='movements')
     quantity = models.PositiveSmallIntegerField(validators=[MinValueValidator(1)])
     price = models.DecimalField(max_digits=7, decimal_places=2, verbose_name='Preis')
     movement_type = models.PositiveSmallIntegerField(choices=MovementType.choices)
@@ -127,9 +162,9 @@ class StockMovement(models.Model):
     created = models.DateTimeField(auto_now_add=True)
 
     class Meta:
-        ordering = ["created"]
-        verbose_name = "Lagerbewegung"
-        verbose_name_plural = "Lagerbewegungen"
+        ordering = ['created']
+        verbose_name = 'Lagerbewegung'
+        verbose_name_plural = 'Lagerbewegungen'
 
 
 class SupplyOrder(models.Model):
@@ -138,94 +173,111 @@ class SupplyOrder(models.Model):
     submitted = models.DateTimeField(blank=True, null=True, verbose_name='Abgeschickt')
 
     class Meta:
+        ordering = ['-created']
         verbose_name = 'Bestellung'
         verbose_name_plural = 'Bestellungen'
 
     def __str__(self):
-        return f"#{self.pk} {self.vendor}"
+        return f'#{self.pk} {self.vendor}'
 
     def submit(self):
         if not self.submitted:
             self.submitted = timezone.now()
             self.save(update_fields=['submitted'])
 
+    def get_article_count(self):
+        return self.positions.all().aggregate(total=Sum('quantity'))['total'] or 0
+
+    def get_total_value(self):
+        return round(self.positions.all().aggregate(total=Sum(F('quantity') * F('price')))['total'] or 0,2)
+
 
 class SupplyOrderArticle(models.Model):
-    order = models.ForeignKey(SupplyOrder, on_delete=models.CASCADE, related_name="positions",
+    order = models.ForeignKey(SupplyOrder, on_delete=models.CASCADE, related_name='positions',
                               verbose_name='Bestellung')
     article = models.ForeignKey(Article, on_delete=models.PROTECT, verbose_name='Artikel')
     quantity = models.PositiveIntegerField(verbose_name='Menge')
     price = models.DecimalField(max_digits=7, decimal_places=2, verbose_name='Preis [EK]')
 
     def __str__(self):
-        return f"{self.order} - {self.article}"
+        return f'{self.order} - {self.article}'
 
+    def get_total(self):
+        return self.quantity * self.price
 
 class Delivery(models.Model):
     vendor = models.ForeignKey(Vendor, on_delete=models.PROTECT)
-    order = models.ForeignKey(SupplyOrder, on_delete=models.CASCADE, related_name="deliveries", blank=True, null=True)
+    order = models.ForeignKey(SupplyOrder, on_delete=models.CASCADE, related_name='deliveries', blank=True, null=True)
     delivery_number = models.CharField(max_length=100)
     delivery_date = models.DateField()
     checked_in = models.DateTimeField(blank=True, null=True)
 
     class Meta:
-        ordering = ["delivery_date"]
+        ordering = ['delivery_date']
         verbose_name = 'Lieferung'
         verbose_name_plural = 'Lieferungen'
 
     def __str__(self):
-        return f"{self.delivery_number} {self.vendor}"
+        return f'{self.delivery_number} {self.vendor}'
+
+    def get_article_count(self):
+        return self.articles.all().aggregate(total=Sum('quantity'))['total'] or 0
+
+    def get_total_value(self):
+        return round(self.articles.all().aggregate(total=Sum(F('quantity') * F('price')))['total'] or 0, 2)
 
 
 class DeliveryArticle(models.Model):
-    delivery = models.ForeignKey(Delivery, on_delete=models.PROTECT, related_name="articles")
-    article = models.ForeignKey(Article, on_delete=models.PROTECT, related_name="deliveries")
+    delivery = models.ForeignKey(Delivery, on_delete=models.PROTECT, related_name='articles')
+    article = models.ForeignKey(Article, on_delete=models.PROTECT, related_name='deliveries')
     quantity = models.PositiveIntegerField()
     price = models.DecimalField(max_digits=7, decimal_places=2, verbose_name='Preis [EK]')
     checked_in = models.DateTimeField(blank=True, null=True)
 
     class Meta:
-        verbose_name = "Lieferartikel"
-        verbose_name_plural = "Lieferartikel"
+        verbose_name = 'Lieferartikel'
+        verbose_name_plural = 'Lieferartikel'
 
     @transaction.atomic
     def save(self, *args, **kwargs):
         if self.pk:
             old = DeliveryArticle.objects.get(pk=self.pk)
             if old.checked_in:
-                raise ValidationError("Cannot modify a finalized receipt!")
+                raise ValidationError('Cannot modify a finalized receipt!')
 
         super().save(*args, **kwargs)
 
+    def get_total_value(self):
+        return round(self.quantity * self.price, 2)
 
 class AbstractService(models.Model):
     MAIN_CATEGORIES = (
-        ("1", "Auftragsannahme | Inspektion | Dienstleistung | Diverses"),
-        ("2", "Rahmen"),
-        ("3", "Räder | Bereifung"),
-        ("4", "Tretlager | Pedale | Antrieb"),
-        ("5", "Kettenschaltung | Nabenschaltung"),
-        ("6", "Bremsen"),
-        ("7", "Lichtanlage | Reflektoren"),
-        ("8", "E-Bike Sonderarbeiten"),
+        ('1', 'Auftragsannahme | Inspektion | Dienstleistung | Diverses'),
+        ('2', 'Rahmen'),
+        ('3', 'Räder | Bereifung'),
+        ('4', 'Tretlager | Pedale | Antrieb'),
+        ('5', 'Kettenschaltung | Nabenschaltung'),
+        ('6', 'Bremsen'),
+        ('7', 'Lichtanlage | Reflektoren'),
+        ('8', 'E-Bike Sonderarbeiten'),
     )
     SUB_CATEGORIES = (
-        ("1", "Zubehörmontage"),
-        ("2", "Lenker | Vorbau"),
-        ("3", "Gabel | Lenkkopflager"),
-        ("4", "Gabelfederung"),
-        ("5", "Hinterbaufederung"),
-        ("6", "Sattel | Sattelstütze"),
-        ("7", "Gepäckträger | Rad- und Kettenschützer"),
-        ("8", "Vorderradnabe"),
-        ("9", "Hinterradnabe"),
-        ("10", "Pedale"),
-        ("11", "Kette"),
-        ("12", "Riemen"),
-        ("13", "Hydraulikbremse"),
-        ("14", "Scheibenbremse"),
-        ("15", "Software | Systemkontrolle | Fehler-Diagnose"),
-        ("16", "Instandsetzung"),
+        ('1', 'Zubehörmontage'),
+        ('2', 'Lenker | Vorbau'),
+        ('3', 'Gabel | Lenkkopflager'),
+        ('4', 'Gabelfederung'),
+        ('5', 'Hinterbaufederung'),
+        ('6', 'Sattel | Sattelstütze'),
+        ('7', 'Gepäckträger | Rad- und Kettenschützer'),
+        ('8', 'Vorderradnabe'),
+        ('9', 'Hinterradnabe'),
+        ('10', 'Pedale'),
+        ('11', 'Kette'),
+        ('12', 'Riemen'),
+        ('13', 'Hydraulikbremse'),
+        ('14', 'Scheibenbremse'),
+        ('15', 'Software | Systemkontrolle | Fehler-Diagnose'),
+        ('16', 'Instandsetzung'),
     )
     main_category = models.CharField(choices=MAIN_CATEGORIES, max_length=100)
     sub_category = models.CharField(choices=SUB_CATEGORIES, max_length=100, blank=True, null=True)
@@ -248,7 +300,7 @@ class AbstractService(models.Model):
         return self.name
 
     def get_work_value_for_type(self, bike_type: str) -> Decimal:
-        return getattr(self, bike_type, Decimal("0.00"))
+        return getattr(self, bike_type, Decimal('0.00'))
 
 
 class Service(AbstractService):

@@ -1,7 +1,7 @@
 {% extends "base.html" %}
 {% block content %}
 <h1>Lager</h1>
-<input type="search" id="search" class="form-control" placeholder="Lager/Artikel suchen...">
+<input type="search" id="search" class="form-control" placeholder="#/Typ/Hersteller/Artikel suchen...">
 <table class="table table-hover">
     <thead>
     <tr>
@@ -26,44 +26,28 @@
             <td>{{a.manufacturer}}</td>
             <td>{{a.name}}</td>
             <td>~ {{a.get_avg_price}} €</td>
-            <td>{{a.get_quantity}}</td>
-            <td></td>
-            <td></td>
-            <td></td>
-            <td></td>
-            <td></td>
+            <td>{{a.get_stock_quantity}}</td>
+            <td>{{ a.get_reserved_quantity }}</td>
+            <td>{{ a.get_requested_quantity }}</td>
+            <td>{{ a.get_available_quantity }}</td>
+            <td>{{a.get_ordered_quantity}}</td>
+            <td>{{a.get_future_quantity}}</td>
         </tr>
-        {% for so in a.articles.all %}
-            {% if not so.delivered %}
-            <tr class="table-secondary">
-            <td>{{ so.order.pk }}</td>
-            <td>Bestellung</td>
-            <td>{{ so.order.vendor }}</td>
+        {% for so in a.stock_articles.all %}
+            <td>{{ so.pk }}</td>
             <td></td>
             <td></td>
             <td></td>
-            <td></td>
-            <td></td>
-            <td></td>
+            <td>{{ so.price }} €</td>
             <td>{{ so.quantity }}</td>
             <td></td>
-            </tr>
-            {% endif %}
-        {% endfor %}
-        {% for sa in a.stockarticle_set.all %}
-            <tr>
-                <td>{{ sa.article.pk }}</td>
-                <td></td>
-                <td></td>
-                <td></td>
-                <td>{{sa.price}} €</td>
-                <td>{{sa.quantity}}</td>
-                <td>{{sa.get_reserved_quantity}}</td>
-                <td>{{sa.get_available_quantity}}</td>
-                <td>{{sa.get_requested_quantity}}</td>
-                <td colspan="3"></td>
+            <td></td>
+            <td></td>
+            <td></td>
+            <td></td>
             </tr>
         {% endfor %}
+        <tr><td colspan="11"></td></tr>
     {% endfor %}
     </tbody>
     <tfoot></tfoot>

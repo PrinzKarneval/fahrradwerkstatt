@@ -2,6 +2,7 @@ from django.contrib import admin
 
 from lager.models import ArticleType, Article, Service, StockMovement, Vendor, SupplyOrderArticle, \
     SupplyOrder, Manufacturer, Delivery, DeliveryArticle, StockArticle
+from lager.services import StockService, DeliveryService
 
 
 @admin.register(Manufacturer)
@@ -85,7 +86,7 @@ class DeliveryAdmin(admin.ModelAdmin):
 
     def check_in(self, request, queryset):
         for delivery in queryset:
-            delivery.check_in()
+            DeliveryService.check_in_delivery(delivery)
 
     def has_change_permission(self, request, obj=None):
         return not (obj and obj.checked_in)

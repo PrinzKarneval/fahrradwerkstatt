@@ -69,3 +69,10 @@ class DeliveryService:
 
         delivery.checked_in = timezone.now()
         delivery.save(update_fields=['checked_in'])
+
+
+class DemandService:
+    @staticmethod
+    @transaction.atomic
+    def update_demands():
+        pass
