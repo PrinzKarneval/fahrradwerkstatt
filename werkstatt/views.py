@@ -76,7 +76,6 @@ class RepairOrderList(ListView):
 
 class RepairOrderDetail(DetailView):
     model = RepairOrder
-    template_name = 'repair_order_detail.html'
 
     def get_context_data(self, *, object_list=None, **kwargs):
         context = super().get_context_data(**kwargs)
@@ -345,12 +344,13 @@ class InvoicePrint(DetailView):
     template_name = "invoice_print.html"
 
 
-class StockArticleListView(ListView):
-    model = StockArticle
-    context_object_name = 'stock_articles'
+class Inventory(ListView):
+    model = Article
+    context_object_name = 'articles'
+    template_name = 'werkstatt/inventory.html'
 
     def get_queryset(self):
-        return StockArticle.objects.all()
+        return Article.objects.all()
 
 
 def article_filter(request, pk):

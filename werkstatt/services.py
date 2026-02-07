@@ -5,12 +5,8 @@ from django.db.models import F
 from django.utils import timezone
 
 from werkstatt.models import Invoice, InvoiceArticle, RepairOrderArticle, StockArticle, StockArticleReservation, \
-    StockArticleRequest, RepairOrderService, WorkRate, InvoiceService, RepairOrder, SupplyOrder, SupplyOrderArticle, \
+    StockArticleRequest, RepairOrderService, WorkRate, InvoiceService, RepairOrder, SupplyOrder, \
     SupplyOrderArticleReceived, Article
-
-RESERVATION_RESERVED = 1
-RESERVATION_INSTALLED = 2
-RESERVATION_CANCELLED = 3
 
 
 class InvoiceCreationService:
@@ -98,15 +94,21 @@ class RepairOrderPricingService:
 class RepairOrderHandler:
     @staticmethod
     @transaction.atomic
-    def update_quantity(ro: RepairOrder, sa: StockArticle, quantity: int) -> None:
-        roa, created = RepairOrderArticle.objects.get_or_create(order=ro, stock_article=sa)
-        difference = quantity - roa.quantity
-        if difference > 0:
-            RepairOrderHandler._roa_increase_quantity(roa, quantity)
-        elif difference < 0:
-            RepairOrderHandler._roa_reduce_quantity(roa, quantity)
-        return None
+    def update_quantity(ro: RepairOrder, sa: StockArticle, old_quantity: int, new_quantity: int) -> None:
+        roa, created = RepairOrderArticle.objects.select_for_update().get_or_create(
+            order=ro,
+            stock_article=sa,
+            defaults={"quantity": old_quantity},
+        )
 
+        roa.quantity = old_quantity  # explizit!
+        roa.save(update_fields=["quantity"])
+
+        difference = new_quantity - old_quantity
+        if difference > 0:
+            RepairOrderHandler._roa_increase_quantity(roa, new_quantity)
+        elif difference < 0:
+            RepairOrderHandler._roa_reduce_quantity(roa, new_quantity)
 
     @staticmethod
     @transaction.atomic
@@ -215,9 +217,15 @@ class RepairOrderHandler:
 class SupplyOrderHandler:
     @staticmethod
     @transaction.atomic
-    def receive_article(supply_order: SupplyOrder, article: Article, quantity: int) ->  None:
-        SupplyOrderArticleReceived.objects.select_for_update().create(
-            supply_order=supply_order, article=article, delivered=timezone.now().date(), quantity=quantity)
+    def check_in(soar: SupplyOrderArticleReceived) ->  None:
+        sa, created = StockArticle.objects.select_for_update().get_or_create(article=soar.article, price=soar.price,
+                                                                             defaults={'quantity': soar.quantity})
+        if not created:
+            sa.quantity += soar.quantity
+            sa.save(update_fields=['quantity'])
+
+        soar.delete()
+
 
 class StockArticleHandler:
     @staticmethod

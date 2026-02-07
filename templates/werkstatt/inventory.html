@@ -1,0 +1,90 @@
+{% extends "base.html" %}
+{% block content %}
+<h1>Lager</h1>
+<input type="search" id="search" class="form-control" placeholder="Lager/Artikel suchen...">
+<table class="table table-hover">
+    <thead>
+    <tr>
+        <th>#</th>
+        <th>Typ</th>
+        <th>Hersteller</th>
+        <th>Artikel</th>
+        <th>Preis</th>
+        <th>Bestand</th>
+        <th>Reserviert</th>
+        <th>Verfügbar</th>
+        <th>Bedarf</th>
+        <th>Bestellt</th>
+        <th>Zukünftig</th>
+    </tr>
+    </thead>
+    <tbody>
+    {% for a in articles %}
+        <tr class="table-info">
+            <td>{{a.pk}}</td>
+            <td>{{a.type}}</td>
+            <td>{{a.manufacturer}}</td>
+            <td>{{a.name}}</td>
+            <td>~ {{a.get_avg_price}} €</td>
+            <td>{{a.get_quantity}}</td>
+            <td>{{a.get_reserved_quantity}}</td>
+            <td>{{a.get_available_quantity}}</td>
+            <td>{{a.get_requested_quantity}}</td>
+            <td>{{a.get_ordered_quantity}}</td>
+            <td>{{a.get_future_quantity}}</td>
+        </tr>
+        {% for so in a.supplyorderarticle_set.all %}
+            {% if not so.delivered %}
+            <tr class="table-secondary">
+            <td>{{ so.order.pk }}</td>
+            <td>Bestellung</td>
+            <td>{{ so.order.vendor }}</td>
+            <td></td>
+            <td></td>
+            <td></td>
+            <td></td>
+            <td></td>
+            <td></td>
+            <td>{{ so.quantity }}</td>
+            <td></td>
+            </tr>
+            {% endif %}
+        {% endfor %}
+        {% for sa in a.stockarticle_set.all %}
+            <tr>
+                <td>{{ sa.article.pk }}</td>
+                <td></td>
+                <td></td>
+                <td></td>
+                <td>{{sa.price}} €</td>
+                <td>{{sa.quantity}}</td>
+                <td>{{sa.get_reserved_quantity}}</td>
+                <td>{{sa.get_available_quantity}}</td>
+                <td>{{sa.get_requested_quantity}}</td>
+                <td colspan="3"></td>
+            </tr>
+        {% endfor %}
+    {% endfor %}
+    </tbody>
+    <tfoot></tfoot>
+</table>
+
+<script>
+    const searchInput = document.querySelector("#search");
+    if (searchInput) {
+        searchInput.addEventListener("input", () => {
+            const query = searchInput.value.toLowerCase();
+            const rows = document.querySelectorAll("table tbody tr");
+            rows.forEach(row => {
+                const [keyCell, typeCell, manufacturerCell, articleCell] = row.children;
+                const text =
+                    keyCell.textContent.toLowerCase() +
+                    typeCell.textContent.toLowerCase() +
+                    manufacturerCell.textContent.toLowerCase() +
+                    articleCell.textContent.toLowerCase();
+                row.style.display = query && !text.includes(query) ? "none" : "";
+            });
+        });
+    }
+</script>
+{% endblock content %}

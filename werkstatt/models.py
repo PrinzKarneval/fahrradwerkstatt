@@ -2,10 +2,8 @@ from decimal import Decimal
 
 from django.core.exceptions import ValidationError
 from django.core.validators import MinValueValidator
-from django.db import models, transaction
+from django.db import models
 from django.db.models import Sum, PositiveSmallIntegerField
-from django.db.models.signals import pre_save
-from django.dispatch import receiver
 from django.urls import reverse
 from django.utils import timezone
 
@@ -36,40 +34,76 @@ class Label(models.Model):
 
 
 class Manufacturer(Label):
-    pass
+    class Meta:
+        verbose_name = 'Hersteller'
+        verbose_name_plural = 'Hersteller'
 
 
 class ArticleType(models.Model):
     parent = models.ForeignKey('self', on_delete=models.PROTECT, null=True, blank=True, related_name='children',
-                               default=None)
+                               default=None, verbose_name='Übergeordneter Typ')
     name = models.CharField(max_length=20)
 
     class Meta:
         ordering = ["name"]
+        verbose_name = 'Artikeltyp'
+        verbose_name_plural = 'Artikeltypen'
 
     def __str__(self):
         return self.name
 
 
 class AbstractArticle(models.Model):
-    manufacturer = models.ForeignKey(Manufacturer, models.CASCADE)
-    type = models.ForeignKey(ArticleType, models.CASCADE)
+    manufacturer = models.ForeignKey(Manufacturer, models.CASCADE, verbose_name='Hersteller')
+    type = models.ForeignKey(ArticleType, models.CASCADE, verbose_name='Typ')
     name = models.CharField(max_length=100)
-    description = models.TextField(blank=True)
-    ean = models.CharField(max_length=13)
+    description = models.TextField(blank=True, verbose_name='Beschreibung')
+    ean = models.CharField(max_length=13,verbose_name='EAN')
     price = models.DecimalField(max_digits=7, decimal_places=2, validators=[MinValueValidator(0)], null=True,
-                                blank=True)
+                                blank=True, verbose_name='Preis [VK]')
 
     class Meta:
         abstract = True
         ordering = ["type", "manufacturer", "name"]
 
     def __str__(self):
-        return f"{self.type} {self.manufacturer} {self.name}"
+        return f"{self.type} - {self.manufacturer} - {self.name}"
 
 
 class Article(AbstractArticle):
-    pass
+    minimum = models.PositiveSmallIntegerField(default=0, validators=[MinValueValidator(0)])
+
+    class Meta:
+        verbose_name = 'Artikel'
+        verbose_name_plural = 'Artikel'
+
+    def get_avg_price(self):
+        sas = StockArticle.objects.filter(article=self)
+        total = sum([Decimal(sa.price) * sa.quantity for sa in sas])
+        count = sum(map(lambda sa: sa.quantity, sas))
+        return Decimal(total / count).quantize(Decimal('.01'))
+
+    def get_quantity(self):
+        return sum(map(lambda sa: sa.quantity, self.stockarticle_set.all()))
+
+    def get_reserved_quantity(self):
+        reservations = StockArticleReservation.objects.filter(stock_article__article=self)
+        return sum(map(lambda r: r.quantity, reservations))
+
+    def get_requested_quantity(self):
+        requests = StockArticleRequest.objects.filter(stock_article__article=self)
+        return sum(map(lambda r: r.quantity, requests))
+
+    def get_available_quantity(self):
+        stock_articles = StockArticle.objects.filter(article=self)
+        return sum(map(lambda sa: sa.get_available_quantity(), stock_articles))
+
+    def get_ordered_quantity(self):
+        orders = SupplyOrderArticle.objects.filter(article=self)
+        return sum(map(lambda a: a.quantity, orders))
+
+    def get_future_quantity(self):
+        return self.get_available_quantity() - self.get_requested_quantity() + self.get_ordered_quantity()
 
 
 class AbstractService(models.Model):
@@ -126,17 +160,22 @@ class AbstractService(models.Model):
 
 
 class Service(AbstractService):
-    pass
+    class Meta:
+        verbose_name = 'Service'
+        verbose_name_plural = 'Services'
 
 
 class StockArticle(models.Model):
-    article = models.ForeignKey(Article, models.PROTECT)
-    minimum = models.PositiveSmallIntegerField(default=0, validators=[MinValueValidator(0)])
-    quantity = models.PositiveSmallIntegerField(default=0, validators=[MinValueValidator(0)])
-    buying_price = models.DecimalField(max_digits=7, decimal_places=2, validators=[MinValueValidator(0)], default=0)
+    article = models.ForeignKey(Article, models.PROTECT, verbose_name='Artikel')
+    quantity = models.PositiveSmallIntegerField(default=0, validators=[MinValueValidator(0)], verbose_name='Menge')
+    price = models.DecimalField(max_digits=7, decimal_places=2, validators=[MinValueValidator(0)], default=0, verbose_name='Preis [EK]')
+
+    class Meta:
+        verbose_name = 'Lagerartikel'
+        verbose_name_plural = 'Lagerartikel'
 
     def __str__(self):
-        return f"{self.quantity} {self.article}"
+        return f"{self.article}"
 
     def get_requested_quantity(self):
         return self.requests.all().aggregate(Sum('quantity'))['quantity__sum'] or 0
@@ -157,17 +196,18 @@ class StockArticle(models.Model):
         )
 
     def get_future_quantity(self):
-        return self.quantity + self.get_ordered_quantity() - self.get_reserved_quantity()
+        return self.get_available_quantity() + self.get_ordered_quantity() - self.get_requested_quantity()
 
 
 class StockArticleRequest(models.Model):
-    repair_order_article = models.ForeignKey("RepairOrderArticle", models.CASCADE)
-    stock_article = models.ForeignKey(StockArticle, models.CASCADE, related_name='requests')
-    quantity = models.PositiveSmallIntegerField(default=1, validators=[MinValueValidator(1)])
-    quantity_ordered = models.PositiveSmallIntegerField(default=0, validators=[MinValueValidator(0)])
-    created = models.DateTimeField(auto_now_add=True)
+    repair_order_article = models.ForeignKey("RepairOrderArticle", models.CASCADE, verbose_name='Reparaturartikel')
+    stock_article = models.ForeignKey(StockArticle, models.CASCADE, related_name='requests', verbose_name='Lagerartikel')
+    quantity = models.PositiveSmallIntegerField(default=1, validators=[MinValueValidator(1)], verbose_name='Menge')
+    created = models.DateTimeField(auto_now_add=True, verbose_name='Erstellt')
 
     class Meta:
+        verbose_name = 'Artikelanforderung'
+        verbose_name_plural = 'Artikelanforderungen'
         constraints = [
             models.UniqueConstraint(
                 fields=["repair_order_article", "stock_article"],
@@ -186,10 +226,14 @@ class StockArticleReservation(models.Model):
         (RESERVATION_CANCELLED, 'Cancelled'),
     )
     repair_order_article = models.ForeignKey("RepairOrderArticle", on_delete=models.CASCADE,
-                                             related_name="reservations")
-    stock_article = models.ForeignKey(StockArticle, on_delete=models.PROTECT, related_name="reservations")
-    quantity = models.PositiveSmallIntegerField(validators=[MinValueValidator(1)])
+                                             related_name="reservations", verbose_name='Reparaturartikel')
+    stock_article = models.ForeignKey(StockArticle, on_delete=models.PROTECT, related_name="reservations", verbose_name='Lagerartikel')
+    quantity = models.PositiveSmallIntegerField(validators=[MinValueValidator(1)], verbose_name='Menge')
     status = models.PositiveSmallIntegerField(choices=STATUS, default=RESERVATION_RESERVED)
+
+    class Meta:
+        verbose_name = 'Artikelreservierung'
+        verbose_name_plural = 'Artikelreservierungen'
 
     def clean(self):
         # Stelle sicher, dass der Artikel identisch ist
@@ -210,17 +254,22 @@ class SupplyOrder(models.Model):
     CANCELLED = 9
 
     STATUS = (
-        (DRAFT, 'Draft'),
-        (SUBMITTED, 'Submitted'),
-        (RECEIVED, 'Received'),
-        (CANCELLED, 'Cancelled'),
+        (DRAFT, 'Entwurf'),
+        (SUBMITTED, 'Abgeschickt'),
+        (RECEIVED, 'Geliefert'),
+        (CANCELLED, 'Storniert'),
     )
 
+    vendor = models.ForeignKey('Vendor', on_delete=models.PROTECT, verbose_name='Händler')
     status = models.PositiveSmallIntegerField(choices=STATUS, default=DRAFT)
-    submitted = models.DateField(blank=True, null=True)
-    delivered = models.DateField(blank=True, null=True)
-    created = models.DateTimeField(editable=False)
-    modified = models.DateTimeField()
+    submitted = models.DateField(blank=True, null=True, verbose_name='Abgeschickt')
+    delivered = models.DateField(blank=True, null=True, verbose_name='Geliefert')
+    created = models.DateTimeField(editable=False, verbose_name='Erstellt')
+    modified = models.DateTimeField(verbose_name='Editiert')
+
+    class Meta:
+        verbose_name = 'Bestellung'
+        verbose_name_plural = 'Bestellungen'
 
     def __str__(self) -> str:
         return f"Supply Order [{self.pk}]"
@@ -238,9 +287,14 @@ class SupplyOrder(models.Model):
 
 
 class SupplyOrderArticle(models.Model):
-    order = models.ForeignKey(SupplyOrder, models.CASCADE, related_name='positions')
-    article = models.ForeignKey(Article, models.PROTECT)
-    quantity = models.PositiveSmallIntegerField(default=0, validators=[MinValueValidator(0)])
+    order = models.ForeignKey(SupplyOrder, models.CASCADE, related_name='positions', verbose_name='Bestellung')
+    article = models.ForeignKey(Article, models.PROTECT, verbose_name='Artikel')
+    price = models.DecimalField(max_digits=7, decimal_places=2, verbose_name='Preis')
+    quantity = models.PositiveSmallIntegerField(validators=[MinValueValidator(0)], verbose_name='Menge')
+
+    class Meta:
+        verbose_name = 'Bestellter Artikel'
+        verbose_name_plural = 'Bestellte Artikel'
 
     def get_fully_delivered(self):
         return sum(map(
@@ -250,17 +304,22 @@ class SupplyOrderArticle(models.Model):
 
 
 class SupplyOrderArticleReceived(models.Model):
-    supply_order = models.ForeignKey(SupplyOrder, models.CASCADE, related_name='received_articles')
-    article = models.ForeignKey(Article, models.PROTECT)
-    delivered = models.DateField(blank=True, null=True)
-    quantity = models.PositiveSmallIntegerField(default=1, validators=[MinValueValidator(1)])
+    supply_order = models.ForeignKey(SupplyOrder, models.CASCADE, related_name='received_articles', verbose_name='Bestellung')
+    article = models.ForeignKey(Article, models.PROTECT, verbose_name='Artikel')
+    delivered = models.DateField(blank=True, null=True, verbose_name='Geliefert')
+    price = models.DecimalField(max_digits=7, decimal_places=2, verbose_name='Preis')
+    quantity = models.PositiveSmallIntegerField(default=1, validators=[MinValueValidator(1)], verbose_name='Menge')
+
+    class Meta:
+        verbose_name = 'Erhaltener Artikel'
+        verbose_name_plural = 'Erhaltene Artikel'
 
 
 class Address(models.Model):
-    postal = models.CharField(max_length=5)
-    city = models.CharField(max_length=50, default="Nürnberg")
-    street = models.CharField(max_length=100)
-    str_no = models.CharField(max_length=5)
+    postal = models.CharField(max_length=5, verbose_name='PLZ')
+    city = models.CharField(max_length=50, default="Nürnberg", verbose_name='Ort')
+    street = models.CharField(max_length=100, verbose_name='Straße')
+    str_no = models.CharField(max_length=20, verbose_name='Hausnr.')
 
     class Meta:
         abstract = True
@@ -270,6 +329,10 @@ class Customer(Address):
     name = models.CharField(max_length=100)
     email = models.EmailField(blank=True, null=True)
     phone = models.CharField(max_length=25, blank=True, null=True)
+
+    class Meta:
+        verbose_name = 'Kunde'
+        verbose_name_plural = 'Kunden'
 
     def __str__(self):
         return self.name
@@ -281,11 +344,13 @@ class Customer(Address):
 class Vendor(Address):
     name = models.CharField(max_length=100)
     email = models.EmailField(blank=True, null=True)
-    phone = models.CharField(max_length=25, blank=True, null=True)
-    country = models.CharField(max_length=100, default='Deutschland')
+    phone = models.CharField(max_length=25, blank=True, null=True, verbose_name='Telefon')
+    country = models.CharField(max_length=100, default='Deutschland', verbose_name='Land')
 
     class Meta:
         ordering = ['name']
+        verbose_name = 'Händler'
+        verbose_name_plural = 'Händler'
 
     def __str__(self):
         return self.name
@@ -306,6 +371,8 @@ class RepairOrder(models.Model):
 
     class Meta:
         ordering = ['-date_finished', 'date_created']
+        verbose_name = 'Reparaturauftrag'
+        verbose_name_plural = 'Reparaturaufträge'
 
     def __str__(self) -> str:
         return f'{self.pk} | {self.customer}'
@@ -321,10 +388,20 @@ class RepairOrder(models.Model):
 
 
 class RepairOrderArticle(models.Model):
-    order = models.ForeignKey(RepairOrder, models.CASCADE, related_name='articles')
-    stock_article = models.ForeignKey(StockArticle, models.CASCADE)
-    quantity = models.PositiveSmallIntegerField(default=0, validators=[MinValueValidator(0)])
+    order = models.ForeignKey(RepairOrder, models.CASCADE, related_name='articles', verbose_name='Reparaturauftrag')
+    stock_article = models.ForeignKey(StockArticle, models.CASCADE, verbose_name='Lagerartikel')
+    quantity = models.PositiveSmallIntegerField(default=0, validators=[MinValueValidator(0)], verbose_name='Menge')
     installed = models.BooleanField(default=False)
+
+    class Meta:
+        verbose_name = 'Reparaturartikel'
+        verbose_name_plural = 'Reparaturartikel'
+        constraints = [
+            models.UniqueConstraint(
+                fields=["order", "stock_article"],
+                name="unique_article_per_repair_order"
+            )
+        ]
 
     def __str__(self) -> str:
         return str(self.stock_article)
@@ -357,6 +434,10 @@ class RepairOrderService(models.Model):
     quantity = models.PositiveSmallIntegerField(default=1, validators=[MinValueValidator(1)])
     status = PositiveSmallIntegerField(choices=STATUS, default=PLANNED)
 
+    class Meta:
+        verbose_name = 'Reparaturservice'
+        verbose_name_plural = 'Reparaturservices'
+
     def __str__(self):
         return str(self.service)
 
@@ -378,6 +459,8 @@ class WorkRate(models.Model):
 
     class Meta:
         ordering = ['-start']
+        verbose_name = 'Stundensatz'
+        verbose_name_plural = 'Stundensätze'
 
     def __str__(self) -> str:
         return str(self.rate)
@@ -411,6 +494,10 @@ class Invoice(models.Model):
     color = models.CharField(max_length=20)
     serial_number = models.CharField(max_length=50)
 
+    class Meta:
+        verbose_name = 'Rechnung'
+        verbose_name_plural = 'Rechnungen'
+
     def __str__(self) -> str:
         return f"Invoice [{self.pk}]"
 
@@ -434,6 +521,10 @@ class InvoiceArticle(AbstractArticle):
     quantity = models.PositiveSmallIntegerField(default=1, validators=[MinValueValidator(1)])
     price = models.DecimalField(max_digits=7, decimal_places=2)
 
+    class Meta:
+        verbose_name = 'Rechnungsartikel'
+        verbose_name_plural = 'Rechnungsartikel'
+
     def get_total(self) -> Decimal:
         return self.quantity * self.price
 
@@ -442,6 +533,10 @@ class InvoiceService(AbstractService):
     invoice = models.ForeignKey(Invoice, models.PROTECT)
     quantity = models.PositiveSmallIntegerField(default=1, validators=[MinValueValidator(1)])
     price = models.DecimalField(max_digits=7, decimal_places=2)
+
+    class Meta:
+        verbose_name = 'Rechnungservice'
+        verbose_name_plural = 'Rechnungsservices'
 
     def get_total(self) -> Decimal:
         return self.quantity * self.price

@@ -37,8 +37,8 @@ urlpatterns = [
     path('invoice/<int:pk>', InvoiceDetail.as_view(), name='invoice_detail'),
     path('invoice/<int:pk>/print', InvoicePrint.as_view(), name='invoice_print'),
 
-    # StockArticles
-    path('stock/', StockArticleListView.as_view(), name='stock_article_list')
+    # Inventory
+    path('inventory/', Inventory.as_view(), name='inventory')
 
 ]
 
