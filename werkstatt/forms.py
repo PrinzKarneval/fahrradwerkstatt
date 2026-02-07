@@ -1,4 +1,4 @@
-from django import forms
+"""from django import forms
 
 from werkstatt.models import RepairOrder, RepairOrderArticle, RepairOrderService, Customer, Invoice
 
@@ -55,3 +55,4 @@ class RepairOrderFinishForm(forms.ModelForm):
     class Meta:
         model = RepairOrder
         fields = ['date_finished']
+"""

@@ -1,0 +1,255 @@
+from decimal import Decimal
+
+from django.core.exceptions import ValidationError
+from django.core.validators import MinValueValidator
+from django.db import models, transaction
+from django.db.models import Sum
+from django.utils import timezone
+
+
+def decimal_field_default():
+    return models.DecimalField(
+        default=Decimal("0.00"),
+        max_digits=10,
+        decimal_places=2,
+        validators=[MinValueValidator(0)]
+    )
+
+
+class MovementType(models.IntegerChoices):
+    IN = 1, "Zugang"
+    OUT = 2, "Abgang"
+    RESERVED = 3, "Reserviert"
+    USED = 4, "Verwendet"
+
+
+class Manufacturer(models.Model):
+    name = models.CharField(max_length=100)
+
+    class Meta:
+        ordering = ['name']
+        verbose_name = 'Hersteller'
+        verbose_name_plural = 'Hersteller'
+
+    def __str__(self):
+        return self.name
+
+
+class Vendor(models.Model):
+    name = models.CharField(max_length=100)
+    email = models.EmailField(blank=True, null=True)
+    phone = models.CharField(max_length=25, blank=True, null=True)
+    country = models.CharField(max_length=100, default='Deutschland')
+    postal = models.CharField(max_length=5)
+    city = models.CharField(max_length=50, default="Nürnberg")
+    street = models.CharField(max_length=100)
+    str_no = models.CharField(max_length=20)
+
+    class Meta:
+        verbose_name = 'Händler'
+        verbose_name_plural = 'Händler'
+        ordering = ['name']
+
+    def __str__(self):
+        return self.name
+
+
+class ArticleType(models.Model):
+    parent = models.ForeignKey('self', null=True, blank=True, default=None, on_delete=models.PROTECT,
+                               related_name='children', verbose_name='Übergeordneter Typ')
+    name = models.CharField(max_length=100)
+
+    class Meta:
+        ordering = ["name"]
+        verbose_name = 'Artikeltyp'
+        verbose_name_plural = 'Artikeltypen'
+
+    def __str__(self):
+        return self.name
+
+
+class AbstractArticle(models.Model):
+    manufacturer = models.ForeignKey(Manufacturer, on_delete=models.PROTECT, verbose_name='Hersteller')
+    type = models.ForeignKey(ArticleType, on_delete=models.CASCADE, verbose_name='Typ')
+    name = models.CharField(max_length=100)
+    description = models.TextField(blank=True, verbose_name='Beschreibung')
+    ean = models.CharField(max_length=13, unique=True, verbose_name='EAN')
+    price = models.DecimalField(
+        max_digits=10, decimal_places=2, null=True, blank=True,
+        validators=[MinValueValidator(0)], verbose_name='Preis [VK]'
+    )
+
+    class Meta:
+        abstract = True
+        ordering = ["type", "manufacturer", "name"]
+
+    def __str__(self):
+        return f"{self.manufacturer} - {self.name}"
+
+
+class Article(AbstractArticle):
+    minimum = models.PositiveSmallIntegerField(default=0, validators=[MinValueValidator(0)])
+
+    class Meta:
+        verbose_name = 'Artikel'
+        verbose_name_plural = 'Artikel'
+
+    def get_available_quantity(self) -> int:
+        return self.stock_articles.aggregate(total=Sum("quantity"))["total"] or 0
+
+
+class StockArticle(models.Model):
+    article = models.ForeignKey(Article, on_delete=models.PROTECT, related_name='stock_articles', verbose_name='Lagerartikel')
+    quantity = models.PositiveSmallIntegerField(default=0)
+    price = models.DecimalField(max_digits=7, decimal_places=2, validators=[MinValueValidator(0)])
+
+    class Meta:
+        constraints = [models.UniqueConstraint(fields=['article', 'price'], name='unique_article_price')]
+        ordering = ['article']
+        verbose_name = 'Lagerartikel'
+        verbose_name_plural = 'Lagerartikel'
+
+    def clean(self):
+        if self.quantity < 0:
+            raise ValidationError("Bestand darf nicht negativ sein.")
+
+
+class StockMovement(models.Model):
+    """
+    Unveränderliches Lagerjournal.
+    Jede Bestandsänderung MUSS hier dokumentiert werden.
+    """
+    stock_article = models.ForeignKey(StockArticle, on_delete=models.PROTECT, related_name="movements")
+    quantity = models.PositiveSmallIntegerField(validators=[MinValueValidator(1)])
+    price = models.DecimalField(max_digits=7, decimal_places=2, verbose_name='Preis')
+    movement_type = models.PositiveSmallIntegerField(choices=MovementType.choices)
+    reference = models.CharField(max_length=100)
+    created = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["created"]
+        verbose_name = "Lagerbewegung"
+        verbose_name_plural = "Lagerbewegungen"
+
+
+class SupplyOrder(models.Model):
+    vendor = models.ForeignKey(Vendor, on_delete=models.PROTECT, verbose_name='Händler')
+    created = models.DateTimeField(auto_now_add=True, verbose_name='Erstellt')
+    submitted = models.DateTimeField(blank=True, null=True, verbose_name='Abgeschickt')
+
+    class Meta:
+        verbose_name = 'Bestellung'
+        verbose_name_plural = 'Bestellungen'
+
+    def __str__(self):
+        return f"#{self.pk} {self.vendor}"
+
+    def submit(self):
+        if not self.submitted:
+            self.submitted = timezone.now()
+            self.save(update_fields=['submitted'])
+
+
+class SupplyOrderArticle(models.Model):
+    order = models.ForeignKey(SupplyOrder, on_delete=models.CASCADE, related_name="positions",
+                              verbose_name='Bestellung')
+    article = models.ForeignKey(Article, on_delete=models.PROTECT, verbose_name='Artikel')
+    quantity = models.PositiveIntegerField(verbose_name='Menge')
+    price = models.DecimalField(max_digits=7, decimal_places=2, verbose_name='Preis [EK]')
+
+    def __str__(self):
+        return f"{self.order} - {self.article}"
+
+
+class Delivery(models.Model):
+    vendor = models.ForeignKey(Vendor, on_delete=models.PROTECT)
+    order = models.ForeignKey(SupplyOrder, on_delete=models.CASCADE, related_name="deliveries", blank=True, null=True)
+    delivery_number = models.CharField(max_length=100)
+    delivery_date = models.DateField()
+    checked_in = models.DateTimeField(blank=True, null=True)
+
+    class Meta:
+        ordering = ["delivery_date"]
+        verbose_name = 'Lieferung'
+        verbose_name_plural = 'Lieferungen'
+
+    def __str__(self):
+        return f"{self.delivery_number} {self.vendor}"
+
+
+class DeliveryArticle(models.Model):
+    delivery = models.ForeignKey(Delivery, on_delete=models.PROTECT, related_name="articles")
+    article = models.ForeignKey(Article, on_delete=models.PROTECT, related_name="deliveries")
+    quantity = models.PositiveIntegerField()
+    price = models.DecimalField(max_digits=7, decimal_places=2, verbose_name='Preis [EK]')
+    checked_in = models.DateTimeField(blank=True, null=True)
+
+    class Meta:
+        verbose_name = "Lieferartikel"
+        verbose_name_plural = "Lieferartikel"
+
+    @transaction.atomic
+    def save(self, *args, **kwargs):
+        if self.pk and self.checked_in:
+            raise ValidationError("Cannot modify a finalized receipt!")
+
+        super().save(*args, **kwargs)
+
+
+class AbstractService(models.Model):
+    MAIN_CATEGORIES = (
+        ("1", "Auftragsannahme | Inspektion | Dienstleistung | Diverses"),
+        ("2", "Rahmen"),
+        ("3", "Räder | Bereifung"),
+        ("4", "Tretlager | Pedale | Antrieb"),
+        ("5", "Kettenschaltung | Nabenschaltung"),
+        ("6", "Bremsen"),
+        ("7", "Lichtanlage | Reflektoren"),
+        ("8", "E-Bike Sonderarbeiten"),
+    )
+    SUB_CATEGORIES = (
+        ("1", "Zubehörmontage"),
+        ("2", "Lenker | Vorbau"),
+        ("3", "Gabel | Lenkkopflager"),
+        ("4", "Gabelfederung"),
+        ("5", "Hinterbaufederung"),
+        ("6", "Sattel | Sattelstütze"),
+        ("7", "Gepäckträger | Rad- und Kettenschützer"),
+        ("8", "Vorderradnabe"),
+        ("9", "Hinterradnabe"),
+        ("10", "Pedale"),
+        ("11", "Kette"),
+        ("12", "Riemen"),
+        ("13", "Hydraulikbremse"),
+        ("14", "Scheibenbremse"),
+        ("15", "Software | Systemkontrolle | Fehler-Diagnose"),
+        ("16", "Instandsetzung"),
+    )
+    main_category = models.CharField(choices=MAIN_CATEGORIES, max_length=100)
+    sub_category = models.CharField(choices=SUB_CATEGORIES, max_length=100, blank=True, null=True)
+    number = models.PositiveSmallIntegerField()
+    name = models.CharField(max_length=100)
+    children_bike = decimal_field_default()
+    hub_gear = decimal_field_default()
+    derailleur = decimal_field_default()
+    mtb = decimal_field_default()
+    road_bike = decimal_field_default()
+    cargo_bike = decimal_field_default()
+    hub_engine = decimal_field_default()
+    mid_engine = decimal_field_default()
+
+    class Meta:
+        abstract = True
+        ordering = ['name']
+
+    def __str__(self):
+        return self.name
+
+    def get_work_value_for_type(self, bike_type: str) -> Decimal:
+        return getattr(self, bike_type, Decimal("0.00"))
+
+
+class Service(AbstractService):
+    class Meta:
+        verbose_name = 'Service'
+        verbose_name_plural = 'Services'

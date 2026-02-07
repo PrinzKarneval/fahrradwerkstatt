@@ -1,10 +1,11 @@
-from django.contrib import messages
+"""from django.contrib import messages
 from django.db.models import Exists, OuterRef
 from django.http import HttpResponseRedirect
 from django.shortcuts import render, redirect, get_object_or_404
 from django.views.generic import CreateView, ListView, DetailView, UpdateView, DeleteView
 from django.urls import reverse_lazy
 
+from lager.models import Article
 from .forms import *
 from .mixins import BackLinkMixin, TitleMixin
 from .models import *
@@ -395,3 +396,4 @@ def repair_order_add_article(request, pk):
         repair_order.add_article(repair_order, stock_article)
         messages.success(request, f"You selected: {stock_article}")
     return redirect(repair_order.get_absolute_url())
+"""

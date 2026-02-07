@@ -31,7 +31,7 @@ ALLOWED_HOSTS = ['prinzkarneval.pythonanywhere.com', '127.0.0.1']
 # Application definition
 
 INSTALLED_APPS = [
-    'werkstatt',
+    'lager',
     'django.contrib.admin',
     'django.contrib.auth',
     'django.contrib.contenttypes',

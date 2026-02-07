@@ -27,13 +27,13 @@
             <td>{{a.name}}</td>
             <td>~ {{a.get_avg_price}} €</td>
             <td>{{a.get_quantity}}</td>
-            <td>{{a.get_reserved_quantity}}</td>
-            <td>{{a.get_available_quantity}}</td>
-            <td>{{a.get_requested_quantity}}</td>
-            <td>{{a.get_ordered_quantity}}</td>
-            <td>{{a.get_future_quantity}}</td>
+            <td></td>
+            <td></td>
+            <td></td>
+            <td></td>
+            <td></td>
         </tr>
-        {% for so in a.supplyorderarticle_set.all %}
+        {% for so in a.articles.all %}
             {% if not so.delivered %}
             <tr class="table-secondary">
             <td>{{ so.order.pk }}</td>
