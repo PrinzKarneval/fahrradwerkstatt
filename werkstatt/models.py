@@ -81,6 +81,8 @@ class Article(AbstractArticle):
         sas = StockArticle.objects.filter(article=self)
         total = sum([Decimal(sa.price) * sa.quantity for sa in sas])
         count = sum(map(lambda sa: sa.quantity, sas))
+        if count == 0:
+            return "-"
         return Decimal(total / count).quantize(Decimal('.01'))
 
     def get_quantity(self):
