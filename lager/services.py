@@ -9,14 +9,14 @@ from .models import StockArticle, MovementType, StockMovement, Delivery
 class StockService:
     @staticmethod
     @transaction.atomic
-    def add_stock(*, stock_article: StockArticle, qty: int, reference: str):
-        stock_article.quantity = F("quantity") + qty
+    def add_stock(*, stock_article: StockArticle, quantity: int, reference: str):
+        stock_article.quantity = F("quantity") + quantity
         stock_article.save(update_fields=["quantity"])
         stock_article.refresh_from_db()
 
         StockMovement.objects.create(
             stock_article=stock_article,
-            quantity=qty,
+            quantity=quantity,
             price=stock_article.price,
             movement_type=MovementType.IN,
             reference=reference,
