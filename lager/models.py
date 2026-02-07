@@ -190,8 +190,10 @@ class DeliveryArticle(models.Model):
 
     @transaction.atomic
     def save(self, *args, **kwargs):
-        if self.pk and self.checked_in:
-            raise ValidationError("Cannot modify a finalized receipt!")
+        if self.pk:
+            old = DeliveryArticle.objects.get(pk=self.pk)
+            if old.checked_in:
+                raise ValidationError("Cannot modify a finalized receipt!")
 
         super().save(*args, **kwargs)
 

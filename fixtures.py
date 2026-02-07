@@ -1,5 +1,5 @@
 from lager.models import *
-
+from lager.services import *
 
 continental = Manufacturer.objects.create(name="Continental")
 maxxis = Manufacturer.objects.create(name="Maxxis")
@@ -59,5 +59,4 @@ da3 = DeliveryArticle.objects.create(delivery=delivery, article=aggressor, quant
 da4 = DeliveryArticle.objects.create(delivery=delivery, article=highroller, quantity=4, price=Decimal("35.99"))
 da5 = DeliveryArticle.objects.create(delivery=delivery, article=ex511, quantity=2, price=Decimal("60.00"))
 
-delivery.check_in()
-
+DeliveryService.check_in_delivery(delivery)
