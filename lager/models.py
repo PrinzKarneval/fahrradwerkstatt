@@ -78,7 +78,7 @@ class AbstractArticle(models.Model):
     type = models.ForeignKey(ArticleType, on_delete=models.CASCADE, verbose_name='Typ')
     name = models.CharField(max_length=100)
     description = models.TextField(blank=True, verbose_name='Beschreibung')
-    ean = models.CharField(max_length=13, unique=True, verbose_name='EAN')
+    ean = models.CharField(max_length=50, unique=True, verbose_name='EAN')
     price = models.DecimalField(
         max_digits=10, decimal_places=2, null=True, blank=True,
         validators=[MinValueValidator(0)], verbose_name='Preis [VK]'
