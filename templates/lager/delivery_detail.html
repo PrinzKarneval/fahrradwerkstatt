@@ -50,7 +50,7 @@
         </tbody>
     </table>
 
-    {% if not delivery.checked_in %}<a class="btn btn-primary" href="{% url 'delivery_article_create' delivery.pk %}">Lieferartikel hinzufügen</a>{% endif %}
+    <!-- { if not delivery.checked_in %}<a class="btn btn-primary" href="{ url 'delivery_article_create' delivery.pk %}">Lieferartikel hinzufügen</a>{ endif }
 
     <div class="modal fade" id="checkinModal" tabindex="-1" aria-labelledby="checkinModalLabel" aria-hidden="true">
         <div class="modal-dialog modal-dialog-centered">
@@ -67,7 +67,7 @@
                 </div>
                 <div class="modal-footer">
                     <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Hoid, stopp!</button>
-                    <a type="button" class="btn btn-success" hreF="{% url 'check_in_delivery' delivery.pk %}">Passt scho, i bin so a Wahnsinn!</a>
+                    <a type="button" class="btn btn-success" hreF="{ url 'check_in_delivery' delivery.pk %}">Passt scho, i bin so a Wahnsinn!</a>
                 </div>
             </div>
         </div>
