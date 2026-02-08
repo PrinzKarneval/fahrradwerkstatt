@@ -7,10 +7,16 @@ from django.utils import timezone
 class StockService:
     @staticmethod
     @transaction.atomic
-    def add_stock(*, stock_article, quantity: int, reference: str) -> None:
+    def add_stock(*, stock_article, quantity: int, reference: str):
         from .models import StockMovement, MovementType
+
+        if quantity <= 0:
+            raise ValidationError("Menge muss größer als 0 sein.")
+
+        stock_article._allow_save = True
         stock_article.quantity = F("quantity") + quantity
         stock_article.save(update_fields=["quantity"])
+        del stock_article._allow_save
         stock_article.refresh_from_db()
 
         StockMovement.objects.create(
@@ -23,13 +29,20 @@ class StockService:
 
     @staticmethod
     @transaction.atomic
-    def remove_stock(*, stock_article, quantity, reference: str) -> None:
+    def remove_stock(*, stock_article, quantity: int, reference: str):
         from .models import StockMovement, MovementType
-        if stock_article.quantity < quantity:
-            raise ValidationError("Nicht genug Bestand")
 
+        if quantity <= 0:
+            raise ValidationError("Menge muss größer als 0 sein.")
+
+        stock_article.refresh_from_db()
+        if stock_article.quantity < quantity:
+            raise ValidationError("Nicht genug Bestand verfügbar.")
+
+        stock_article._allow_save = True
         stock_article.quantity = F("quantity") - quantity
         stock_article.save(update_fields=["quantity"])
+        del stock_article._allow_save
         stock_article.refresh_from_db()
 
         StockMovement.objects.create(
@@ -44,25 +57,26 @@ class StockService:
 class DeliveryService:
     @staticmethod
     @transaction.atomic
-    def check_in_delivery(delivery) -> None:
+    def check_in_delivery(delivery):
         from .models import StockArticle
 
         if delivery.checked_in:
             raise ValidationError("Lieferung wurde bereits eingebucht.")
 
-        for da in delivery.articles.select_for_update():
+        delivery_articles = delivery.articles.select_for_update().select_related("article")
+        for da in delivery_articles:
             if da.checked_in:
                 continue
 
-            sa = StockArticle.objects.get_or_create_empty(
-                article=da.article,
-                price=da.price,
-            )
+            # zuerst StockArticle über Manager holen/erstellen
+            sa = StockArticle.objects.get_or_create_empty(article=da.article, price=da.price)
+            # dann sperren für parallele Buchungen
+            sa = StockArticle.objects.select_for_update().get(pk=sa.pk)
 
             StockService.add_stock(
                 stock_article=sa,
                 quantity=da.quantity,
-                reference=f"Lieferung #{delivery.delivery_number}",
+                reference=f"Lieferung {delivery.delivery_number}"
             )
 
             da.checked_in = timezone.now()
@@ -76,4 +90,5 @@ class DemandService:
     @staticmethod
     @transaction.atomic
     def update_demands():
+        # Platzhalter für zukünftige Logik
         pass
