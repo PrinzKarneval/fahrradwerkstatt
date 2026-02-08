@@ -1,0 +1,57 @@
+{% extends "base.html" %}
+{% block content %}
+<style>.clickable-row {
+    cursor: pointer;
+}</style>
+<h1>Bestellungen</h1>
+<input id="search" type="search" placeholder="Bestellnr., Händler suchen..." autofocus="autofocus" class="form-control my-3">
+<table class="table table-hover">
+    <thead>
+    <tr class="table-secondary">
+        <th>Bestellnr.</th>
+        <th>Händler</th>
+        <th>Erstellt</th>
+        <th>Bestellt</th>
+        <th>Artikel</th>
+        <th>Wert</th>
+    </tr>
+    </thead>
+
+    <tbody>
+    {% for so in supply_orders %}
+        <tr class="clickable-row" data-href="{{ so.get_absolute_url }}">
+            <td>{{ so.order_number }}</td>
+            <td>{{ so.vendor }}</td>
+            <td>{{ so.created }}</td>
+            <td>{{ so.ordered }}</td>
+            <td>{{ so.get_article_count }}</td>
+            <td>{{ so.get_total_value }} €</td>
+        </tr>
+    {% endfor %}
+    </tbody>
+</table>
+<script>
+document.addEventListener("DOMContentLoaded", function () {
+    document.querySelectorAll(".clickable-row").forEach(function (row) {
+        row.addEventListener("click", function () {
+            window.location.href = this.dataset.href;
+        });
+    });
+});
+
+const searchInput = document.querySelector('#search');
+if (searchInput) {
+    searchInput.addEventListener("input", () => {
+        const query = searchInput.value.toLowerCase();
+        const rows = document.querySelectorAll('tbody tr');
+
+        rows.forEach((row) => {
+           const cells = row.children;
+           const text = cells[0].textContent + cells[1].textContent;
+            const match = text.toLowerCase().includes(query);
+            row.style.display = match ? "" : "none";
+        });
+    });
+};
+</script>
+{% endblock content %}

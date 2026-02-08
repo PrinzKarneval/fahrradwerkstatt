@@ -3,13 +3,12 @@ from django.db import transaction
 from django.db.models import F
 from django.utils import timezone
 
-from .models import StockArticle, MovementType, StockMovement, Delivery
-
 
 class StockService:
     @staticmethod
     @transaction.atomic
-    def add_stock(*, stock_article: StockArticle, quantity: int, reference: str):
+    def add_stock(*, stock_article, quantity: int, reference: str) -> None:
+        from .models import StockMovement, MovementType
         stock_article.quantity = F("quantity") + quantity
         stock_article.save(update_fields=["quantity"])
         stock_article.refresh_from_db()
@@ -24,7 +23,8 @@ class StockService:
 
     @staticmethod
     @transaction.atomic
-    def remove_stock(*, stock_article: StockArticle, quantity: int, reference: str):
+    def remove_stock(*, stock_article, quantity, reference: str) -> None:
+        from .models import StockMovement, MovementType
         if stock_article.quantity < quantity:
             raise ValidationError("Nicht genug Bestand")
 
@@ -44,7 +44,9 @@ class StockService:
 class DeliveryService:
     @staticmethod
     @transaction.atomic
-    def check_in_delivery(delivery: Delivery):
+    def check_in_delivery(delivery) -> None:
+        from .models import StockArticle
+
         if delivery.checked_in:
             raise ValidationError("Lieferung wurde bereits eingebucht.")
 
@@ -52,23 +54,22 @@ class DeliveryService:
             if da.checked_in:
                 continue
 
-            sa, _ = StockArticle.objects.get_or_create(
+            sa = StockArticle.objects.get_or_create_empty(
                 article=da.article,
                 price=da.price,
-                defaults={"quantity": 0}
             )
 
             StockService.add_stock(
                 stock_article=sa,
                 quantity=da.quantity,
-                reference=f"Lieferung #{delivery.delivery_number}"
+                reference=f"Lieferung #{delivery.delivery_number}",
             )
 
             da.checked_in = timezone.now()
             da.save(update_fields=["checked_in"])
 
         delivery.checked_in = timezone.now()
-        delivery.save(update_fields=['checked_in'])
+        delivery.save(update_fields=["checked_in"])
 
 
 class DemandService:

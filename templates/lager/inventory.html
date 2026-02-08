@@ -1,10 +1,11 @@
 {% extends "base.html" %}
 {% block content %}
+<style>.clickable-row {cursor: pointer;}</style>
 <h1>Lager</h1>
-<input type="search" id="search" class="form-control" placeholder="#/Typ/Hersteller/Artikel suchen...">
+<input type="search" autofocus="autofocus" id="search" class="form-control my-3" placeholder="#/Typ/Hersteller/Artikel suchen...">
 <table class="table table-hover">
     <thead>
-    <tr>
+    <tr class="table-secondary">
         <th>#</th>
         <th>Typ</th>
         <th>Hersteller</th>
@@ -20,53 +21,81 @@
     </thead>
     <tbody>
     {% for a in articles %}
-        <tr class="table-info">
-            <td>{{a.pk}}</td>
-            <td>{{a.type}}</td>
-            <td>{{a.manufacturer}}</td>
-            <td>{{a.name}}</td>
-            <td>~ {{a.get_avg_price}} €</td>
-            <td>{{a.get_stock_quantity}}</td>
+        <tr class="table-light article clickable-row" data-article="{{ a.pk }}" data-href="{{ a.get_absolute_url }}">
+            <td>{{ a.pk }}</td>
+            <td>{{ a.type }}</td>
+            <td>{{ a.manufacturer }}</td>
+            <td>{{ a.name }}</td>
+            <td>~ {{ a.get_avg_price }} €</td>
+            <td>{{ a.get_stock_quantity }}</td>
             <td>{{ a.get_reserved_quantity }}</td>
             <td>{{ a.get_requested_quantity }}</td>
             <td>{{ a.get_available_quantity }}</td>
-            <td>{{a.get_ordered_quantity}}</td>
-            <td>{{a.get_future_quantity}}</td>
+            <td>{{ a.get_ordered_quantity }}</td>
+            <td>{{ a.get_future_quantity }}</td>
         </tr>
         {% for so in a.stock_articles.all %}
-            <td>{{ so.pk }}</td>
-            <td></td>
-            <td></td>
-            <td></td>
-            <td>{{ so.price }} €</td>
-            <td>{{ so.quantity }}</td>
-            <td></td>
-            <td></td>
-            <td></td>
-            <td></td>
-            <td></td>
+            <tr class="stock-article clickable-row" data-article="{{ a.pk }}" data-href="{{ a.get_absolute_url }}">
+                <td>{{ so.pk }}</td>
+                <td colspan="3"></td>
+                <td>{{ so.price }} €</td>
+                <td>{{ so.quantity }}</td>
+                <td colspan="5"></td>
             </tr>
         {% endfor %}
-        <tr><td colspan="11"></td></tr>
+        <tr class="article-spacer" data-article="{{ a.pk }}">
     {% endfor %}
     </tbody>
     <tfoot></tfoot>
 </table>
 
 <script>
+    document.addEventListener("DOMContentLoaded", function () {
+        document.querySelectorAll(".clickable-row").forEach(function (row) {
+            row.addEventListener("click", function () {
+                window.location.href = this.dataset.href;
+            });
+        });
+    });
+
     const searchInput = document.querySelector("#search");
     if (searchInput) {
         searchInput.addEventListener("input", () => {
             const query = searchInput.value.toLowerCase();
-            const rows = document.querySelectorAll("table tbody tr");
-            rows.forEach(row => {
-                const [keyCell, typeCell, manufacturerCell, articleCell] = row.children;
+
+            const articleRows = document.querySelectorAll("tr.article");
+            const stockRows = document.querySelectorAll("tr.stock-article");
+            const spacerRows = document.querySelectorAll("tr.article-spacer");
+
+            articleRows.forEach(articleRow => {
+                const cells = articleRow.children;
                 const text =
-                    keyCell.textContent.toLowerCase() +
-                    typeCell.textContent.toLowerCase() +
-                    manufacturerCell.textContent.toLowerCase() +
-                    articleCell.textContent.toLowerCase();
-                row.style.display = query && !text.includes(query) ? "none" : "";
+                    cells[0].textContent +
+                    cells[1].textContent +
+                    cells[2].textContent +
+                    cells[3].textContent;
+
+                const match = text.toLowerCase().includes(query);
+
+                articleRow.style.display = match ? "" : "none";
+                const articleId = articleRow.dataset.article;
+                stockRows.forEach(stockRow => {
+                    if (stockRow.dataset.article === articleId) {
+                        stockRow.style.display = match ? "" : "none";
+                    }
+                    if (!query) {
+                        articleRow.style.display = "";
+                        stockRow.style.display = "";
+                        stockRow.style.display = "";
+                        return;
+                    }
+                });
+                spacerRows.forEach(row => {
+                    if (row.dataset.article === articleId) {
+                        row.style.display = match ? "" : "none";
+                    }
+                });
+
             });
         });
     }

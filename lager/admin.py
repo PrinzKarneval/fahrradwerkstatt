@@ -34,10 +34,12 @@ class ArticleAdmin(admin.ModelAdmin):
 class StockArticleAdmin(admin.ModelAdmin):
     list_display = ('article', 'quantity', 'price')
 
+
 @admin.register(StockMovement)
 class StockMovementAdmin(admin.ModelAdmin):
     list_display = ('stock_article', 'quantity', 'movement_type', 'reference', 'created')
     list_filter = ('movement_type',)
+
 
 class SupplyOrderArticleInline(admin.TabularInline):
     model = SupplyOrderArticle
@@ -47,8 +49,8 @@ class SupplyOrderArticleInline(admin.TabularInline):
 
 @admin.register(SupplyOrder)
 class SupplyOrderAdmin(admin.ModelAdmin):
-    list_display = ('id', 'vendor', 'submitted')
-    list_filter = ('created', 'submitted')
+    list_display = ('id', 'vendor', 'ordered')
+    list_filter = ('created', 'ordered')
     search_fields = ('vendor__name',)
     inlines = [SupplyOrderArticleInline]
     actions = ['submit_orders', 'reopen_orders']
@@ -57,7 +59,7 @@ class SupplyOrderAdmin(admin.ModelAdmin):
         for order in queryset:
             order.submit()
 
-    def reopen_orders(self,request, queryset):
+    def reopen_orders(self, request, queryset):
         for order in queryset:
             order.submitted = None
             order.save()
@@ -66,10 +68,10 @@ class SupplyOrderAdmin(admin.ModelAdmin):
     reopen_orders.short_description = "Ausgewählte Bestellungen erneut öffnen"
 
     def has_change_permission(self, request, obj=None):
-        return not (obj and obj.submitted)
+        return not (obj and obj.ordered)
 
     def has_delete_permission(self, request, obj=None):
-        return not (obj and obj.submitted)
+        return not (obj and obj.ordered)
 
 
 class DeliveryArticleInline(admin.TabularInline):
@@ -111,7 +113,6 @@ class DeliveryArticleAdmin(admin.ModelAdmin):
 
     def has_delete_permission(self, request, obj=None):
         return not (obj and obj.checked_in)
-
 
 
 @admin.register(Service)

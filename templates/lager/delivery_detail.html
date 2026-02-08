@@ -1,0 +1,75 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="my-3">
+    <a class="btn btn-sm btn-secondary" href="{% url 'delivery_list' %}">Zurück</a>
+</div>
+
+    <div class="d-flex justify-content-between align-items-start p-4">
+        <div>
+            <strong>{{ delivery.vendor }}</strong><br>
+            {{ delivery.vendor.postal }} {{ delivery.vendor.city }}<br>
+            {{ delivery.vendor.street }} {{ delivery.vendor.street_no }}
+        </div>
+
+        <div class="text-center">
+            Liefernummer: {{ delivery.delivery_number }}<br>
+            Artikel: {{ delivery.get_article_count }}<br>
+            Wert: {{ delivery.get_total_value }} €
+        </div>
+
+        <div class="text-end">
+            Lieferdatum: {{ delivery.delivery_date }}<br>
+            {% if delivery.checked_in %}
+                Eingelagert: {{ delivery.checked_in }}
+            {% else %}
+                <button type="button" class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#checkinModal">
+                    Einlagern
+                </button>
+            {% endif %}
+        </div>
+    </div>
+
+    <table class="table table-light table-hover">
+        <thead>
+        <tr class="table-secondary">
+            <th>Artikel</th>
+            <th>Preis</th>
+            <th>Menge</th>
+            <th>Gesamt</th>
+        </tr>
+        </thead>
+        <tbody>
+        {% for da in delivery.articles.all %}
+            <tr>
+                <td>{{ da.article }}</td>
+                <td>{{ da.price }} €</td>
+                <td>{{ da.quantity }}</td>
+                <td>{{ da.get_total_value }} €</td>
+            </tr>
+        {% endfor %}
+        </tbody>
+    </table>
+
+    {% if not delivery.checked_in %}<a class="btn btn-primary" href="{% url 'delivery_article_create' delivery.pk %}">Lieferartikel hinzufügen</a>{% endif %}
+
+    <div class="modal fade" id="checkinModal" tabindex="-1" aria-labelledby="checkinModalLabel" aria-hidden="true">
+        <div class="modal-dialog modal-dialog-centered">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h1 class="modal-title fs-5" id="checkinModalLabel">Bevor ma’s versaut…</h1>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body">
+                    Schau bitte no amoi gscheid drüber, ob d’Zeug aa wirklich passen – ned dass am End wos fehlt oder
+                    z’vui drin is.
+                    <span class="text-center"><img
+                            src="https://media1.giphy.com/media/v1.Y2lkPTc5MGI3NjExMmR0cjR2dm1zMmszOWpldWxyNnZnbml4eWZyZTg4ZmFhZDFzdXVnbiZlcD12MV9pbnRlcm5hbF9naWZfYnlfaWQmY3Q9Zw/mgqefqwSbToPe/giphy.gif"></span>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Hoid, stopp!</button>
+                    <a type="button" class="btn btn-success" hreF="{% url 'check_in_delivery' delivery.pk %}">Passt scho, i bin so a Wahnsinn!</a>
+                </div>
+            </div>
+        </div>
+    </div>
+{% endblock content %}

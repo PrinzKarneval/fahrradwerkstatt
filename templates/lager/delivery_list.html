@@ -1,0 +1,57 @@
+{% extends "base.html" %}
+{% block content %}
+<style>.clickable-row {cursor: pointer;}</style>
+<h1>Lieferungen</h1>
+<input id="search" type="search" placeholder="Liefernr., Händler suchen..." autofocus="autofocus" class="form-control my-3">
+
+<table class="table table-light table-hover">
+    <thead>
+    <tr class="table-secondary">
+        <th>Liefernr.</th>
+        <th>Händler</th>
+        <th>Lieferdatum</th>
+        <th>Artikel</th>
+        <th>Gesamt</th>
+    </tr>
+    </thead>
+    <tbody>
+    {% for d in deliveries %}
+        <tr class="clickable-row" data-href="{{ d.get_absolute_url }}">
+            <td>{{ d.delivery_number }}</td>
+            <td>{{ d.vendor }}</td>
+            <td>{{ d.delivery_date }}</td>
+            <td>{{ d.get_article_count }}</td>
+            <td>{{ d.get_total_value }} €</td>
+        </tr>
+    {% endfor %}
+    </tbody>
+</table>
+
+<script>
+document.addEventListener("DOMContentLoaded", function () {
+    document.querySelectorAll(".clickable-row").forEach(function (row) {
+        row.addEventListener("click", function () {
+            window.location.href = this.dataset.href;
+        });
+    });
+});
+
+const searchInput = document.querySelector('#search');
+if (searchInput) {
+    searchInput.addEventListener("input", () => {
+        const query = searchInput.value.toLowerCase();
+        const rows = document.querySelectorAll('tbody tr');
+
+        rows.forEach((row) => {
+           const cells = row.children;
+           const text = cells[0].textContent + cells[1].textContent;
+            const match = text.toLowerCase().includes(query);
+            row.style.display = match ? "" : "none";
+        });
+    });
+};
+
+
+
+</script>
+{% endblock content %}

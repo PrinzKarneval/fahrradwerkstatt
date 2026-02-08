@@ -1,0 +1,37 @@
+{% extends "base.html" %}
+{% block content %}
+    <div class="my-3">
+        <a class="btn btn-sm btn-secondary" href="{% url 'inventory' %}">Zurück</a>
+    </div>
+
+    <h1>{{ article.name }}</h1>
+    <p>{{ article.manufacturer }}<br>
+        Typ: {{ article.type }}<br>
+        EAN: {{ article.ean }}<br>
+        Preis: {{ article.price }} €
+    </p>
+    <p>
+        {{ article.description }}
+    </p>
+
+    <h2>Bestand</h2>
+    <table class="table">
+    <thead>
+        <tr>
+            <th>#</th>
+            <th>Menge</th>
+            <th>Einkaufspreis</th>
+        </tr>
+        </thead>
+    <tbody>
+    {% for so in article.stock_articles.all %}
+            <tr>
+                <td>{{ so.pk }}</td>
+                <td>{{ so.quantity }}</td>
+                <td>{{ so.price }} €</td>
+            </tr>
+        {% endfor %}
+    </tbody>
+
+    </table>
+{% endblock content %}

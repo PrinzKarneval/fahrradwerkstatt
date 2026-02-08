@@ -1,0 +1,62 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="my-3">
+    <a class="btn btn-sm btn-secondary" href="{% url 'supply_order_list' %}">Zurück</a>
+</div>
+    <div class="d-flex justify-content-between align-items-start p-4">
+        <div>
+            <strong>{{ supply_order.vendor }}</strong><br>
+            {{ supply_order.vendor.postal }} {{ supply_order.vendor.city }}<br>
+            {{ supply_order.vendor.street }} {{ supply_order.vendor.street_no }}
+        </div>
+
+        <div class="text-center">
+            Bestellnummer: {{ supply_order.order_number }}<br>
+            Artikel: {{ supply_order.get_article_count }}<br>
+            Wert: {{ supply_order.get_total_value }} €
+        </div>
+        <div class="text-end">
+        <div>
+            Erstellt: {{ supply_order.created }}<br>
+            Bestellt: {{ supply_order.ordered }}
+        </div>
+            <div class="border"></div>
+            <div class="d-flex pt-2">
+                {% for d in supply_order.deliveries.all %}
+                    <a class="btn btn-sm btn-outline-primary me-1" href="{{ d.get_absolute_url }}">{{ d.delivery_number }}</a><br>
+                {% endfor %}
+            </div>
+        </div>
+
+    </div>
+
+    <table class="table table-light table-hover">
+        <thead>
+        <tr class="table-secondary">
+            <th>Artikel</th>
+            <th>Preis</th>
+            <th>Menge</th>
+            <th>Gesamt</th>
+        </tr>
+        </thead>
+        <tbody>
+        {% for soa in supply_order.positions.all %}
+            <tr>
+                <td>{{ soa.article }}</td>
+                <td>{{ soa.price }} €</td>
+                <td>{{ soa.quantity }}</td>
+                <td>{{ soa.get_total_value }} €</td>
+            </tr>
+        {% endfor %}
+        </tbody>
+        <tfoot>
+        <tr class="fw-bold table-primary">
+            <td></td>
+            <td>Gesamt</td>
+            <td>{{ supply_order.get_article_count }}</td>
+            <td>{{ supply_order.get_total_value }} €</td>
+        </tr>
+        </tfoot>
+    </table>
+
+{% endblock content %}

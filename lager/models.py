@@ -4,7 +4,10 @@ from django.core.exceptions import ValidationError
 from django.core.validators import MinValueValidator
 from django.db import models, transaction
 from django.db.models import Sum, F
+from django.urls import reverse
 from django.utils import timezone
+
+from lager.services import StockService
 
 
 def decimal_field_default():
@@ -94,6 +97,9 @@ class Article(AbstractArticle):
         verbose_name = 'Artikel'
         verbose_name_plural = 'Artikel'
 
+    def get_absolute_url(self):
+        return reverse('article_detail', kwargs={'pk': self.pk})
+
     def get_stock_quantity(self) -> int:
         return self.stock_articles.aggregate(total=Sum('quantity'))['total'] or 0
 
@@ -110,7 +116,7 @@ class Article(AbstractArticle):
 
     def get_ordered_quantity(self):
         return SupplyOrderArticle.objects.filter(
-            order__submitted__isnull=False,
+            order__ordered__isnull=False,
             order__deliveries__isnull=True,
             article=self,
         ).aggregate(total=Sum('quantity'))['total'] or 0
@@ -133,10 +139,42 @@ class Article(AbstractArticle):
         return round(agg['total_value'] / agg['total_qty'], 2)
 
 
+class StockArticleManager(models.Manager):
+    def create_with_stock(self, *, article, price, initial_quantity, reference):
+        """
+        Factory-Methode für die Erstellung eines StockArticle.
+        Initialisiert den Bestand über StockService.
+        """
+        stock_article = self.model(article=article, price=price)
+        stock_article._allow_save = True
+        stock_article.save()
+        del stock_article._allow_save
+
+        StockService.add_stock(stock_article=stock_article, quantity=initial_quantity, reference=reference)
+        return stock_article
+
+    def get_or_create_empty(self, *, article, price):
+        """
+        Holt bestehenden StockArticle oder erstellt einen LEEREN
+        (Bestand = 0), ohne Movement.
+        """
+        try:
+            return self.get(article=article, price=price)
+        except self.model.DoesNotExist:
+            sa = self.model(article=article, price=price, quantity=0)
+            sa._allow_save = True
+            sa.save()
+            del sa._allow_save
+            return sa
+
+
 class StockArticle(models.Model):
-    article = models.ForeignKey(Article, on_delete=models.PROTECT, related_name='stock_articles', verbose_name='Lagerartikel')
+    article = models.ForeignKey(Article, on_delete=models.PROTECT, related_name='stock_articles',
+                                verbose_name='Lagerartikel')
     quantity = models.PositiveSmallIntegerField(default=0)
     price = models.DecimalField(max_digits=7, decimal_places=2, validators=[MinValueValidator(0)])
+
+    objects = StockArticleManager()
 
     class Meta:
         constraints = [models.UniqueConstraint(fields=['article', 'price'], name='unique_article_price')]
@@ -147,6 +185,14 @@ class StockArticle(models.Model):
     def clean(self):
         if self.quantity < 0:
             raise ValidationError('Bestand darf nicht negativ sein.')
+
+    def save(self, *args, **kwargs):
+        if not getattr(self, '_allow_save', False):
+            raise ValidationError(
+                "StockArticle darf nicht direkt gespeichert werden. "
+                "Nutze StockService oder den Manager."
+            )
+        super().save(*args, **kwargs)
 
 
 class StockMovement(models.Model):
@@ -169,8 +215,9 @@ class StockMovement(models.Model):
 
 class SupplyOrder(models.Model):
     vendor = models.ForeignKey(Vendor, on_delete=models.PROTECT, verbose_name='Händler')
+    order_number = models.CharField(max_length=100, blank=True, verbose_name='Bestellnummer')
     created = models.DateTimeField(auto_now_add=True, verbose_name='Erstellt')
-    submitted = models.DateTimeField(blank=True, null=True, verbose_name='Abgeschickt')
+    ordered = models.DateTimeField(blank=True, null=True, verbose_name='Bestellt')
 
     class Meta:
         ordering = ['-created']
@@ -185,11 +232,14 @@ class SupplyOrder(models.Model):
             self.submitted = timezone.now()
             self.save(update_fields=['submitted'])
 
+    def get_absolute_url(self):
+        return reverse('supply_order_detail', kwargs={'pk': self.pk})
+
     def get_article_count(self):
         return self.positions.all().aggregate(total=Sum('quantity'))['total'] or 0
 
     def get_total_value(self):
-        return round(self.positions.all().aggregate(total=Sum(F('quantity') * F('price')))['total'] or 0,2)
+        return round(self.positions.all().aggregate(total=Sum(F('quantity') * F('price')))['total'] or 0, 2)
 
 
 class SupplyOrderArticle(models.Model):
@@ -202,8 +252,9 @@ class SupplyOrderArticle(models.Model):
     def __str__(self):
         return f'{self.order} - {self.article}'
 
-    def get_total(self):
+    def get_total_value(self):
         return self.quantity * self.price
+
 
 class Delivery(models.Model):
     vendor = models.ForeignKey(Vendor, on_delete=models.PROTECT)
@@ -213,12 +264,15 @@ class Delivery(models.Model):
     checked_in = models.DateTimeField(blank=True, null=True)
 
     class Meta:
-        ordering = ['delivery_date']
+        ordering = ['-delivery_date']
         verbose_name = 'Lieferung'
         verbose_name_plural = 'Lieferungen'
 
     def __str__(self):
         return f'{self.delivery_number} {self.vendor}'
+
+    def get_absolute_url(self):
+        return reverse("delivery_detail", kwargs={"pk": self.pk})
 
     def get_article_count(self):
         return self.articles.all().aggregate(total=Sum('quantity'))['total'] or 0
@@ -228,11 +282,12 @@ class Delivery(models.Model):
 
 
 class DeliveryArticle(models.Model):
-    delivery = models.ForeignKey(Delivery, on_delete=models.PROTECT, related_name='articles')
-    article = models.ForeignKey(Article, on_delete=models.PROTECT, related_name='deliveries')
-    quantity = models.PositiveIntegerField()
+    delivery = models.ForeignKey(Delivery, on_delete=models.PROTECT, related_name='articles', verbose_name='Lieferung')
+    article = models.ForeignKey(Article, on_delete=models.PROTECT, related_name='deliveries',
+                                verbose_name='Lieferartikel')
+    quantity = models.PositiveIntegerField(verbose_name='Menge')
     price = models.DecimalField(max_digits=7, decimal_places=2, verbose_name='Preis [EK]')
-    checked_in = models.DateTimeField(blank=True, null=True)
+    checked_in = models.DateTimeField(blank=True, null=True, verbose_name='Eingelagert')
 
     class Meta:
         verbose_name = 'Lieferartikel'
@@ -249,6 +304,7 @@ class DeliveryArticle(models.Model):
 
     def get_total_value(self):
         return round(self.quantity * self.price, 2)
+
 
 class AbstractService(models.Model):
     MAIN_CATEGORIES = (
