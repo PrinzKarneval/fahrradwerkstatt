@@ -228,9 +228,9 @@ class SupplyOrder(models.Model):
         return f'#{self.pk} {self.vendor}'
 
     def submit(self):
-        if not self.submitted:
+        if not self.ordered:
             self.submitted = timezone.now()
-            self.save(update_fields=['submitted'])
+            self.save(update_fields=['ordered'])
 
     def get_absolute_url(self):
         return reverse('supply_order_detail', kwargs={'pk': self.pk})
