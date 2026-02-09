@@ -138,23 +138,21 @@ class Article(AbstractArticle):
 
 class StockArticleManager(models.Manager):
     def create_with_stock(self, *, article, price, initial_quantity, reference):
-        stock_article = self.model(article=article, price=price)
-        stock_article._allow_save = True
-        stock_article.save()
-        del stock_article._allow_save
-
+        stock_article = self.get_or_create_empty(article=article, price=price)
         StockService.add_stock(stock_article=stock_article, quantity=initial_quantity, reference=reference)
         return stock_article
 
+    def _force_create(self, **kwargs):
+        obj = self.model(**kwargs)
+        obj._allow_save = True
+        obj.save()
+        del obj._allow_save
+        return obj
+
     def get_or_create_empty(self, *, article, price):
-        try:
-            return self.get(article=article, price=price)
-        except self.model.DoesNotExist:
-            sa = self.model(article=article, price=price, quantity=0)
-            sa._allow_save = True
-            sa.save()
-            del sa._allow_save
-            return sa
+        return self.get(article=article, price=price) \
+            if self.filter(article=article, price=price)\
+            else self._force_create(article=article, price=price)
 
 
 class StockArticle(models.Model):
