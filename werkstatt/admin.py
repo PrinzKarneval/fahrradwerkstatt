@@ -1,8 +1,6 @@
-"""from django.contrib import admin
+from django.contrib import admin
 
-from lager.services import StockArticleHandler
 from werkstatt.models import *
-from werkstatt.services import RepairOrderHandler
 
 admin.site.register(Customer)
 
@@ -23,13 +21,6 @@ class RepairOrderArticleInline(admin.TabularInline):
     model = RepairOrderArticle
     extra = 0
 
-    def save_model(self, request, obj, form, change):
-        super().save_model(request, obj, form, change)
-        StockArticleHandler.handle_repair_order_article_change(obj)
-
-    def delete_model(self, request, obj):
-        StockArticleHandler.handle_repair_order_article_change(obj, deleted=True)
-        super().delete_model(request, obj)
 
 class RepairOrderServiceInline(admin.TabularInline):
     model = RepairOrderService
@@ -66,4 +57,3 @@ class WorkRateAdmin(admin.ModelAdmin):
     list_display = ('rate', 'start_date', 'end_date')
     list_filter = ('start_date', 'end_date')
     search_fields = ('rate',)
-"""

@@ -4,12 +4,15 @@
 <a class="btn btn-primary" href="{% url 'customer_create' %}"><h1>Legen Sie Ihren ersten Kunden an</h1></a>
 {% else %}
 <h1>Kunden</h1>
-<div class="row">
-    <div class="col">
-        <a class="btn btn-primary" href="{% url 'customer_create' %}">Kunden anlegen</a>
-    </div>
-    <div class="col">
-        <input type="search" id="search" class="form-control" placeholder="Kunden suchen...">
+<div class="d-flex">
+<div class="me-3">
+
+    <a class="btn btn-primary" href="{% url 'customer_create' %}">Kunden anlegen</a>
+</div>
+
+    <div class="flex-grow-1">
+
+        <input type="search" autofocus="autofocus" id="search" class="form-control" placeholder="Kunden suchen...">
     </div>
 </div>
 <table class="table table-hover">

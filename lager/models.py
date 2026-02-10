@@ -99,6 +99,9 @@ class Article(AbstractArticle):
         verbose_name = 'Artikel'
         verbose_name_plural = 'Artikel'
 
+    def __str__(self):
+        return self.name
+
     def get_absolute_url(self):
         return reverse('article_detail', kwargs={'pk': self.pk})
 
@@ -167,6 +170,9 @@ class StockArticle(models.Model):
         ordering = ['article']
         verbose_name = 'Lagerartikel'
         verbose_name_plural = 'Lagerartikel'
+
+    def __str__(self):
+        return self.article.name
 
     def clean(self):
         if self.quantity < 0:

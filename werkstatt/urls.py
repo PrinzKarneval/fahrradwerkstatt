@@ -1,5 +1,6 @@
-"""from django.urls import path
+from django.urls import path
 from .views import *
+
 urlpatterns = [
     # Customer
     path('customers/', CustomerList.as_view(), name='customer_list'),
@@ -41,5 +42,3 @@ urlpatterns = [
     path('inventory/', Inventory.as_view(), name='inventory')
 
 ]
-
-"""

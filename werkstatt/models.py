@@ -4,8 +4,8 @@ from django.db import models
 from django.urls import reverse
 from django.utils import timezone
 
-from lager.models import decimal_field_default, ArticleType, Service, Manufacturer
-"""
+from lager.models import decimal_field_default, ArticleType, StockArticle, Service, Manufacturer
+
 BIKE_TYPES = (
     ('children_bike', "Children's bike"),
     ('hub_gear', 'Hub Gear'),
@@ -52,6 +52,9 @@ class RepairOrder(models.Model):
 
     def __str__(self):
         return f"RO #{self.pk} - {self.customer}"
+
+    def get_absolute_url(self):
+        return reverse("repair_order_detail", kwargs={"pk": self.pk})
 
     def get_total_article_price(self):
         return sum((a.stock_article.article.price or 0) * a.quantity for a in self.articles.all())
@@ -200,4 +203,3 @@ class InvoiceService(models.Model):
 
     def total(self) -> Decimal:
         return self.price * self.quantity
-"""
