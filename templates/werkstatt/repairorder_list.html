@@ -2,6 +2,10 @@
 {% block content %}
 <style>.clickable-row {cursor: pointer;}</style>
 <h1>{{title}}</h1>
+<div class="my-3">
+    <input type="search" autofocus="autofocus" id="search" class="form-control" placeholder="Kunden suchen...">
+</div>
+
 <table class="table table-hover">
     <thead>
     <tr>
@@ -11,7 +15,6 @@
         <th>Erstellt</th>
         <th>Fertig</th>
         <th>Kunde</th>
-        <th></th>
     </tr>
     </thead>
     <tbody>
@@ -23,7 +26,6 @@
         <td>{{ object.date_created }}</td>
         <td>{{ object.date_finished }}</td>
         <td>{{ object.customer }}</td>
-        <td><a href="{% url 'repair_order_detail' object.pk %}">Öffnen</a></td>
     </tr>
     {% empty %}
     <tr>

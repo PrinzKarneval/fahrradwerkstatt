@@ -34,6 +34,9 @@ class Customer(models.Model):
     def get_absolute_url(self):
         return reverse("customer_detail", kwargs={"pk": self.pk})
 
+    def get_open_repairs(self):
+        return self.repairorder_set.filter(date_finished__isnull=True).count()
+
 
 class RepairOrder(models.Model):
     customer = models.ForeignKey(Customer, on_delete=models.PROTECT)

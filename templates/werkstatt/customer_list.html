@@ -1,17 +1,17 @@
 {% extends "base.html" %}
 {% block content %}
+<style>.clickable-row {
+    cursor: pointer;
+}</style>
 {% if not customers %}
 <a class="btn btn-primary" href="{% url 'customer_create' %}"><h1>Legen Sie Ihren ersten Kunden an</h1></a>
 {% else %}
 <h1>Kunden</h1>
-<div class="d-flex">
-<div class="me-3">
-
-    <a class="btn btn-primary" href="{% url 'customer_create' %}">Kunden anlegen</a>
-</div>
-
+<div class="d-flex my-3">
+    <div class="me-3">
+        <a class="btn btn-primary" href="{% url 'customer_create' %}">Kunden anlegen</a>
+    </div>
     <div class="flex-grow-1">
-
         <input type="search" autofocus="autofocus" id="search" class="form-control" placeholder="Kunden suchen...">
     </div>
 </div>
@@ -22,15 +22,17 @@
         <th>Name</a></th>
         <th>Email</th>
         <th>Telefon</th>
+        <th>Offene Aufträge</th>
     </tr>
     </thead>
     <tbody>
     {% for c in customers %}
-    <tr>
+    <tr class="clickable-row" data-href="{{ c.get_absolute_url }}">
         <td>{{c.pk}}</td>
-        <td><a href="{% url 'customer_detail' c.pk %}">{{c}}</a></td>
-        <td><a href="mailto:{{ c.email }}">{{ c.email }}</a></td>
-        <td><a href="tel:{{ c.phone }}">{{ c.phone }}</a></td>
+        <td>{{c}}</td>
+        <td>{{ c.email }}</td>
+        <td>{{ c.phone }}</td>
+        <td>{{ c.get_open_repairs }}</td>
     </tr>
     {% endfor %}
     </tbody>
@@ -56,5 +58,15 @@
             }
         });
     }
+
+
+    document.addEventListener("DOMContentLoaded", function () {
+        document.querySelectorAll(".clickable-row").forEach(function (row) {
+            row.addEventListener("click", function () {
+                window.location.href = this.dataset.href;
+            });
+        });
+    });
+
 </script>
 {% endblock content %}

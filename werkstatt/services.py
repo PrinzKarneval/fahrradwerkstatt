@@ -1,4 +1,4 @@
-"""from decimal import Decimal
+from decimal import Decimal
 from django.db import transaction
 from django.utils import timezone
 
@@ -33,7 +33,6 @@ class InvoiceCreationService:
             serial_number=order.serial_number,
         )
 
-        # Artikel
         invoice_articles = [
             InvoiceArticle(
                 manufacturer=roa.stock_article.article.manufacturer,
@@ -49,7 +48,6 @@ class InvoiceCreationService:
         ]
         InvoiceArticle.objects.bulk_create(invoice_articles)
 
-        # Services
         invoice_services = [
             InvoiceService(
                 main_category=ros.service.main_category,
@@ -71,9 +69,10 @@ class InvoiceCreationService:
             for ros in order.services.all()
         ]
         InvoiceService.objects.bulk_create(invoice_services)
+        order.delete()
+        return invoice
 
-        # Optional: Lagerabbuchung für Artikel
-        for roa in order.articles.all():
+"""        for roa in order.articles.all():
             sa = roa.stock_article
             if sa.get_available_quantity() >= roa.quantity:
                 StockMovement.objects.create(
@@ -82,9 +81,7 @@ class InvoiceCreationService:
                     movement_type=StockMovement.OUT,
                     reference=f"RO #{order.pk} Rechnung #{invoice.pk}"
                 )
-
-        order.delete()
-        return invoice
+"""
 
 
 class RepairOrderPricingService:
@@ -168,4 +165,3 @@ class RepairOrderHandler:
         roa.save()
         if roa.quantity <= 0:
             roa.delete()
-"""
