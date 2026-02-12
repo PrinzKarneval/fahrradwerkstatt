@@ -18,9 +18,17 @@ from http.client import HTTPResponse
 
 from django.contrib import admin
 from django.urls import path, include
+from django.views.generic import TemplateView
+
+
+class Home(TemplateView):
+    template_name = 'home.html'
 
 urlpatterns = [
     path('', include('werkstatt.urls')),
-    path('', include('lager.urls')),
+    path('lager/', include('lager.urls')),
+    path('admin/', admin.site.urls),
     path('admin/', admin.site.urls),
 ]
+
+

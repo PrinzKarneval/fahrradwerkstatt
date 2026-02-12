@@ -364,7 +364,7 @@ class InvoicePrint(DetailView):
 class Inventory(ListView):
     model = Article
     context_object_name = 'articles'
-    template_name = 'werkstatt/inventory.html'
+    template_name = 'lager/inventory.html'
 
     def get_queryset(self):
         return Article.objects.all()

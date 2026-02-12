@@ -18,6 +18,7 @@ class ArticleDetail(DetailView):
     model = Article
     context_object_name = 'article'
 
+
 class SupplyOrderList(ListView):
     model = SupplyOrder
     context_object_name = 'supply_orders'

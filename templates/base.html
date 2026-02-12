@@ -52,11 +52,11 @@
     } else if (event.altKey && event.key === '2') {
         window.location.href = "{% url 'repair_order_list' %}";
     } else if (event.altKey && event.key === '3') {
-        window.location.href = "/lager";
+        window.location.href = "{% url 'inventory' %}";
     } else if (event.altKey && event.key === '4') {
-        window.location.href = "/bestellungen/";
+        window.location.href = "{% url 'supply_order_list' %}";
     } else if (event.altKey && event.key === '5') {
-        window.location.href = "/lieferungen/";
+        window.location.href = "{% url 'delivery_list' %}";
     }
 });
 </script>
