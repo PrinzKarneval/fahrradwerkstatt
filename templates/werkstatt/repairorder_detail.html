@@ -1,8 +1,7 @@
 {% extends "base.html" %}
 {% block content %}
 
-
-<div class="container">
+<div>
     <a class="btn btn-secondary btn-sm" href="{{object.customer.get_absolute_url }}">Zurück</a>
 
     <div class="row">
@@ -36,7 +35,8 @@
             <th class="text-start">Services</th>
             <th></th>
             <th>Anzahl</th>
-            <th>Preis</th>
+            <th>EK</th>
+            <th>VK</th>
             <th>Gesamt</th>
         </tr>
         {% for s in object.services.all %}
@@ -49,6 +49,7 @@
                 {% endif %}
             </td>
             <td>{{s.quantity}}</td>
+            <td></td>
             <td>{{s.get_price}} €</td>
             <td>{{s.get_total}} €</td>
         </tr>
@@ -59,9 +60,9 @@
                 <a class="btn btn-sm btn-primary" href="{% url 'repair_order_service_add' object.pk %}">Service
                     hinzufügen</a>
             </th>
-            <th class="border-0" colspan="2">Preis Arbeiten</th>
-            {% else %}
             <th class="border-0" colspan="3">Preis Arbeiten</th>
+            {% else %}
+            <th class="border-0" colspan="4">Preis Arbeiten</th>
             {% endif %}
             <th class="border-0">{{object.get_total_service_price}} €</th>
         </tr>
@@ -79,9 +80,9 @@
             </td>
             <td>
                 {{roa.quantity}}
-            <td>{{roa.article.price}} €</td>
+            <td>{{roa.stock_article.price}} €</td>
+            <td>{{roa.stock_article.article.price}} €</td>
             <td>{{roa.get_total}} €</td>
-            <td></td>
         </tr>
         {% endfor %}
         <tr class="text-end">
@@ -93,22 +94,22 @@
             </th>
             {% endif %}
             {% if not object.date_finished %}
-            <th class="border-0" colspan="2">Preis Artikel</th>
+            <th class="border-0" colspan="4">Preis Artikel</th>
             {% else %}
-            <th class="border-0" colspan="3">Preis Artikel</th>
+            <th class="border-0" colspan="5">Preis Artikel</th>
             {% endif %}
             <th class="border-0">{{object.get_total_article_price}} €</th>
         </tr>
         <tr class="text-end">
-            <th colspan="3">Gesamtpreis</th>
+            <th colspan="5">Gesamtpreis</th>
             <th>{{object.get_total}}</th>
         </tr>
     </table>
+    <div class="text-end">
+        <a class="btn btn-outline-secondary" href="{% url 'repair_order_update' object.pk %}">Bearbeiten</a>
+        <a class="btn btn-outline-danger" href="{% url 'repair_order_delete' object.pk %}">Auftrag löschen</i></a>
+    </div>
 </div>
 
-<div class="text-end">
-    <a class="btn btn-outline-secondary" href="{% url 'repair_order_update' object.pk %}">Bearbeiten</a>
-    <a class="btn btn-outline-danger" href="{% url 'repair_order_delete' object.pk %}">Auftrag löschen</i></a>
-</div>
 
 {% endblock content %}

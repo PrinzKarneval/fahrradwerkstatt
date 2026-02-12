@@ -201,7 +201,7 @@ class RepairOrderArticleAdd(CreateView):
         )
         sa = form.cleaned_data['stock_article']
         RepairOrderHandler.update_quantity(ro, sa , roa.quantity + form.instance.quantity)
-        return HttpResponseRedirect(reverse('repair_order_detail', args=[self.kwargs.get('pk')]))
+        return HttpResponseRedirect(reverse('repair_order_detail', args=[self.kwargs.get('pk')], context={"messages": "adskjla"}))
 
     def get_success_url(self):
         return reverse('repair_order_detail', args=[self.kwargs['pk']])

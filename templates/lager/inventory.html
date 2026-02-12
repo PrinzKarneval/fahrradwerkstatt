@@ -34,13 +34,17 @@
             <td>{{ a.get_ordered_quantity }}</td>
             <td>{{ a.get_future_quantity }}</td>
         </tr>
-        {% for so in a.stock_articles.all %}
+        {% for sa in a.stock_articles.all %}
             <tr class="stock-article clickable-row" data-article="{{ a.pk }}" data-href="{{ a.get_absolute_url }}">
-                <td>{{ so.pk }}</td>
+                <td>{{ sa.pk }}</td>
                 <td colspan="3"></td>
-                <td>{{ so.price }} €</td>
-                <td>{{ so.quantity }}</td>
-                <td colspan="5"></td>
+                <td>{{ sa.price }} €</td>
+                <td>{{ sa.quantity }}</td>
+                <td>{{ sa.get_reserved_quantity }}</td>
+                <td>{{ sa.get_available_quantity }}</td>
+                <td>{{ sa.get_requested_quantity }}</td>
+                <td>{{ sa.get_ordered_quantity }}</td>
+                <td>{{ sa.get_future_quantity }}</td>
             </tr>
         {% endfor %}
         <tr class="article-spacer" data-article="{{ a.pk }}">

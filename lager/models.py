@@ -225,6 +225,16 @@ class StockArticle(models.Model):
             .aggregate(total=Coalesce(Sum("quantity"), 0))["total"]
         )
 
+    def get_ordered_quantity(self):
+        return sum(map(lambda soa: soa.quantity, SupplyOrderArticle.objects.filter(article=self.article, price=self.price)))
+
+    def get_future_quantity(self) -> int:
+        return SupplyOrderArticle.objects.filter(
+            order__ordered__isnull=False,
+            order__deliveries__isnull=True,
+            article=self.article
+        ).aggregate(total=Sum('quantity'))['total'] or 0
+
     def __str__(self):
         return self.article.name
 

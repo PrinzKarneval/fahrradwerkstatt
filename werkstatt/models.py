@@ -60,7 +60,8 @@ class RepairOrder(models.Model):
         return reverse("repair_order_detail", kwargs={"pk": self.pk})
 
     def get_total_article_price(self):
-        return sum((a.stock_article.article.price or 0) * a.quantity for a in self.articles.all())
+        return sum((roa.stock_article.article.price or 0) * roa.quantity for roa in self.articles.all())
+
 
 
 class RepairOrderArticle(models.Model):
@@ -74,6 +75,9 @@ class RepairOrderArticle(models.Model):
 
     def __str__(self):
         return f"{self.stock_article} x {self.quantity}"
+
+    def get_total(self):
+        return self.quantity * self.stock_article.article.price
 
 
 class RepairOrderService(models.Model):
