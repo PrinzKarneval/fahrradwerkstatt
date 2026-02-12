@@ -1,0 +1,10 @@
+{% extends "base.html" %}
+{% block content %}
+<style>.clickable-row {cursor: pointer;}</style>
+<h1>Artikel hinzufügen</h1>
+<form method="post">
+    {% csrf_token %}
+    {{form.as_p}}
+    <button type="submit" class="btn btn-success">{{ submit_text|default:"Speichern" }}</button>
+</form>
+{% endblock %}

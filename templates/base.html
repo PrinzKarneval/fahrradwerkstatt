@@ -19,8 +19,8 @@
         <div class="collapse navbar-collapse" id="navbarNav">
             <ul class="navbar-nav me-auto">
                 {% block links %}{% endblock %}
-                <li class="nav-item"><a id="link-1" class="nav-link" href="customers/">1 | Kunden</a></li>
-                <li class="nav-item"><a id="link-2" class="nav-link" href="/">2 | Werkstatt</a></li>
+                <li class="nav-item"><a id="link-1" class="nav-link" href="{% url 'customer_list' %}">1 | Kunden</a></li>
+                <li class="nav-item"><a id="link-2" class="nav-link" href="{% url 'repair_order_list' %}">2 | Werkstatt</a></li>
                 <li class="nav-item"><a id="link-3" class="nav-link" href="{% url 'inventory' %}">3 | Lager</a></li>
                 <li class="nav-item"><a id="link-4" class="nav-link" href="{% url 'supply_order_list' %}">4 | Bestellungen</a></li>
                 <li class="nav-item"><a id="link-5" class="nav-link" href="{% url 'delivery_list' %}">5 | Lieferungen</a></li>
@@ -47,11 +47,10 @@
 <script src=" https://cdn.jsdelivr.net/npm/@fortawesome/fontawesome-free@7.1.0/js/all.min.js "></script>
 <script>
     document.addEventListener('keydown', function(event) {
-    event.preventDefault(); // Stop browser save
     if (event.altKey && event.key === '1') {
-        window.location.href = "/customers/";
+        window.location.href = "{% url 'customer_list' %}";
     } else if (event.altKey && event.key === '2') {
-        window.location.href = "/";
+        window.location.href = "{% url 'repair_order_list' %}";
     } else if (event.altKey && event.key === '3') {
         window.location.href = "/lager";
     } else if (event.altKey && event.key === '4') {

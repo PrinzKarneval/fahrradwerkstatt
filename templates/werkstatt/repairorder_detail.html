@@ -34,6 +34,7 @@
     <table class="table table-hover">
         <tr class="text-end">
             <th class="text-start">Services</th>
+            <th></th>
             <th>Anzahl</th>
             <th>Preis</th>
             <th>Gesamt</th>
@@ -65,20 +66,22 @@
             <th class="border-0">{{object.get_total_service_price}} €</th>
         </tr>
         <tr class="text-end">
-            <th colspan="4" class="text-start">Teile</th>
+            <th colspan="5" class="text-start">Teile</th>
         </tr>
         {% for roa in object.articles.all %}
         <tr class="text-end">
             <td class="text-start">
                 {{roa.stock_article.article}}
-                {% if not object.date_finished %}
-                <a href="{% url 'repair_order_article_update' object.pk roa.pk %}">edit</a>
-                <a href="{% url 'repair_order_article_delete' object.pk roa.pk %}">delete</a>
-                {% endif %}
             </td>
-            <td>{{roa.quantity}}</td>
+            <td>
+                <a class="btn btn-sm btn-outline-primary" href="{% url 'repair_order_article_minus_one' roa.pk %}">-</a>
+                <a class="btn btn-sm btn-outline-primary" href="{% url 'repair_order_article_plus_one' roa.pk %}">+</a>
+            </td>
+            <td>
+                {{roa.quantity}}
             <td>{{roa.article.price}} €</td>
             <td>{{roa.get_total}} €</td>
+            <td></td>
         </tr>
         {% endfor %}
         <tr class="text-end">

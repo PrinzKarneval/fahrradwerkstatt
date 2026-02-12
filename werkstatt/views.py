@@ -1,15 +1,15 @@
 from django.contrib import messages
 from django.db.models import Exists, OuterRef
-from django.http import HttpResponseRedirect
+from django.http import *
 from django.shortcuts import render, redirect, get_object_or_404
 from django.views.generic import CreateView, ListView, DetailView, UpdateView, DeleteView
 from django.urls import reverse_lazy
 
-from lager.models import Article
+from lager.models import Article, StockArticle
 from .forms import *
 from .mixins import BackLinkMixin, TitleMixin
 from .models import *
-
+from .services import RepairOrderHandler
 
 class CustomerList(ListView):
     model = Customer
@@ -170,10 +170,20 @@ class RepairOrderServiceDelete(DeleteView):
         return reverse_lazy('repair_order_detail', kwargs={'pk': self.object.order.pk})
 
 
+def repair_order_article_plus_one(request, roa_pk):
+    roa = get_object_or_404(RepairOrderArticle, pk=roa_pk)
+    RepairOrderHandler.update_quantity(roa.order, roa.stock_article, roa.quantity + 1)
+    return HttpResponseRedirect(reverse_lazy('repair_order_detail', args=[roa.order.pk]))
+
+def repair_order_article_minus_one(request, roa_pk):
+    roa = get_object_or_404(RepairOrderArticle, pk=roa_pk)
+    RepairOrderHandler.update_quantity(roa.order, roa.stock_article, roa.quantity - 1)
+    return HttpResponseRedirect(reverse_lazy('repair_order_detail', args=[roa.order.pk]))
+
+
 class RepairOrderArticleAdd(CreateView):
     model = RepairOrderArticle
     form_class = RepairOrderArticleForm
-    template_name = "form.html"
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
@@ -183,25 +193,23 @@ class RepairOrderArticleAdd(CreateView):
         return context
 
     def form_valid(self, form):
-        order_pk = self.kwargs["pk"]
-        order = get_object_or_404(RepairOrder, pk=order_pk)
-        articles = order.repairorderarticle_set.filter(article=form.instance.stock_article)
-        if len(articles) == 1:
-            article = articles[0]
-            article.quantity += form.instance.quantity
-            article.save()
-            return HttpResponseRedirect(reverse_lazy('repair_order_detail', args=[order_pk]))
-        form.instance.order = order
-        return super().form_valid(form)
+        ro = get_object_or_404(RepairOrder, pk=self.kwargs['pk'])
+        roa, created = RepairOrderArticle.objects.get_or_create(
+            order=ro,
+            stock_article=form.instance.stock_article,
+            defaults={'quantity': 0}
+        )
+        sa = form.cleaned_data['stock_article']
+        RepairOrderHandler.update_quantity(ro, sa , roa.quantity + form.instance.quantity)
+        return HttpResponseRedirect(reverse('repair_order_detail', args=[self.kwargs.get('pk')]))
 
     def get_success_url(self):
-        return reverse_lazy('repair_order_detail', kwargs={'pk': self.object.order.pk})
-
+        return reverse('repair_order_detail', args=[self.kwargs['pk']])
 
 class RepairOrderArticleUpdate(UpdateView):
     model = RepairOrderArticle
     form_class = RepairOrderArticleForm
-    template_name = "form.html"
+    template_name = "werkstatt/form.html"
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
@@ -210,9 +218,17 @@ class RepairOrderArticleUpdate(UpdateView):
         context["title"] = "Artikel aktualisieren"
         return context
 
-    def get_success_url(self):
-        print(self.object.order.pk)
-        return reverse('repair_order_detail', args=[self.kwargs.get('order_pk')])
+    def form_valid(self, form):
+        roa = RepairOrderArticle.objects.get(pk=form.instance.pk)
+        print("Old quantity", roa.quantity)
+        print("New quantity", form.instance.quantity)
+        RepairOrderHandler.update_quantity(
+            form.instance.order,
+            form.instance.stock_article,
+            roa.quantity,
+            form.instance.quantity)
+
+        return HttpResponseRedirect(reverse('repair_order_detail', args=[roa.order.pk]))
 
 
 class RepairOrderArticleDelete(DeleteView):

@@ -102,41 +102,66 @@ class Article(AbstractArticle):
     def __str__(self):
         return self.name
 
-    def get_absolute_url(self):
-        return reverse('article_detail', kwargs={'pk': self.pk})
-
     def get_stock_quantity(self) -> int:
+        """
+        Sum of all StockArticle quantities for this article.
+        """
         return self.stock_articles.aggregate(total=Sum('quantity'))['total'] or 0
 
-    def get_available_quantity(self) -> int:
-        return self.get_stock_quantity() - self.get_reserved_quantity() - self.get_requested_quantity()
-
     def get_reserved_quantity(self) -> int:
-        # TODO: Implement real reserved quantity logic
-        return 0
+        """
+        Total quantity reserved for repair orders across all StockArticles.
+        """
+        from werkstatt.models import StockArticleReservation
+        return StockArticleReservation.objects.filter(
+            stock_article__article=self
+        ).aggregate(total=Sum('quantity'))['total'] or 0
 
     def get_requested_quantity(self) -> int:
-        # TODO: Implement real requested quantity logic
-        return 0
+        """
+        Total quantity requested (not yet in stock) across all StockArticles.
+        """
+        from werkstatt.models import StockArticleRequest
+        return StockArticleRequest.objects.filter(
+            stock_article__article=self
+        ).aggregate(total=Sum('quantity'))['total'] or 0
 
-    def get_ordered_quantity(self):
+    def get_available_quantity(self) -> int:
+        """
+        Quantity that can be reserved immediately.
+        """
+        available = self.get_stock_quantity() - self.get_reserved_quantity() - self.get_requested_quantity()
+        return max(0, available)
+
+    def get_ordered_quantity(self) -> int:
+        """
+        Quantity ordered but not yet delivered.
+        """
+        from .models import SupplyOrderArticle
         return SupplyOrderArticle.objects.filter(
             order__ordered__isnull=False,
             order__deliveries__isnull=True,
-            article=self,
+            article=self
         ).aggregate(total=Sum('quantity'))['total'] or 0
 
     def get_future_quantity(self) -> int:
-        return self.get_stock_quantity() + self.get_ordered_quantity()
+        """
+        Available quantity + ordered quantity minus requested quantity.
+        Represents what will be available in the near future.
+        """
+        return self.get_available_quantity() + self.get_ordered_quantity()
 
-    def get_avg_price(self):
-        agg = StockArticle.objects.filter(article=self).aggregate(
+    def get_avg_price(self) -> Decimal:
+        """
+        Weighted average price across all StockArticles.
+        """
+        agg = self.stock_articles.aggregate(
             total_value=Sum(F('price') * F('quantity')),
             total_qty=Sum('quantity')
         )
         if not agg['total_qty']:
-            return 0
-        return round(agg['total_value'] / agg['total_qty'], 2)
+            return Decimal('0.00')
+        return (agg['total_value'] / agg['total_qty']).quantize(Decimal('0.01'))
 
 
 class StockArticleManager(models.Manager):
@@ -170,6 +195,35 @@ class StockArticle(models.Model):
         ordering = ['article']
         verbose_name = 'Lagerartikel'
         verbose_name_plural = 'Lagerartikel'
+
+
+    def get_stock_quantity(self) -> int:
+        return self.quantity
+
+    def get_reserved_quantity(self) -> int:
+        from werkstatt.models import StockArticleReservation
+        from django.db.models import Sum
+        from django.db.models.functions import Coalesce
+
+        return (
+            StockArticleReservation.objects
+            .filter(stock_article=self)
+            .aggregate(total=Coalesce(Sum("quantity"), 0))["total"]
+        )
+
+    def get_available_quantity(self) -> int:
+        return self.quantity - self.get_reserved_quantity()
+
+    def get_requested_quantity(self) -> int:
+        from werkstatt.models import StockArticleRequest
+        from django.db.models import Sum
+        from django.db.models.functions import Coalesce
+
+        return (
+            StockArticleRequest.objects
+            .filter(stock_article=self)
+            .aggregate(total=Coalesce(Sum("quantity"), 0))["total"]
+        )
 
     def __str__(self):
         return self.article.name
