@@ -1,8 +1,12 @@
-from django.contrib import admin
+from django.contrib import admin, messages
+from django.core.exceptions import ValidationError
 
-from lager.models import ArticleType, Article, Service, StockMovement, Vendor, SupplyOrderArticle, \
-    SupplyOrder, Manufacturer, Delivery, DeliveryArticle, StockArticle
-from lager.services import StockService, DeliveryService
+from lager.models import (
+    ArticleType, Article, Service, StockMovement, Vendor,
+    SupplyOrderArticle, SupplyOrder, Manufacturer,
+    Delivery, DeliveryArticle, StockArticle
+)
+from lager.services import DeliveryService
 
 
 @admin.register(Manufacturer)
@@ -29,10 +33,25 @@ class ArticleAdmin(admin.ModelAdmin):
     list_filter = ('type', 'manufacturer')
     search_fields = ('name',)
 
-
 @admin.register(StockArticle)
 class StockArticleAdmin(admin.ModelAdmin):
-    list_display = ('article', 'quantity', 'price')
+    list_display = ('article', 'price', 'get_quantity', 'get_available_quantity')
+    readonly_fields = ('get_quantity', 'get_available_quantity')
+
+    def get_quantity(self, obj):
+        return obj.get_quantity()
+    get_quantity.short_description = "Gesamtbestand"
+
+    def get_available_quantity(self, obj):
+        return obj.get_available_quantity()
+    get_available_quantity.short_description = "Verfügbar"
+
+    def has_change_permission(self, request, obj=None):
+        # Prevent manual editing; stock changes should go via movements
+        return False
+
+    def has_delete_permission(self, request, obj=None):
+        return False
 
 
 @admin.register(StockMovement)
@@ -40,11 +59,15 @@ class StockMovementAdmin(admin.ModelAdmin):
     list_display = ('stock_article', 'quantity', 'movement_type', 'reference', 'created')
     list_filter = ('movement_type',)
 
+    def has_change_permission(self, request, obj=None):
+        return False
+
+    def has_delete_permission(self, request, obj=None):
+        return False
 
 class SupplyOrderArticleInline(admin.TabularInline):
     model = SupplyOrderArticle
     extra = 0
-    inlines = []
 
 
 @admin.register(SupplyOrder)
@@ -55,22 +78,31 @@ class SupplyOrderAdmin(admin.ModelAdmin):
     inlines = [SupplyOrderArticleInline]
     actions = ['submit_orders', 'reopen_orders']
 
+    @admin.action(description="Ausgewählte Bestellungen einreichen")
     def submit_orders(self, request, queryset):
         for order in queryset:
-            order.submit()
+            if not order.ordered:
+                order.submit()
+                self.message_user(request, f"Bestellung #{order.pk} eingereicht.", level=messages.SUCCESS)
+            else:
+                self.message_user(request, f"Bestellung #{order.pk} war bereits eingereicht.", level=messages.WARNING)
 
+    @admin.action(description="Ausgewählte Bestellungen erneut öffnen")
     def reopen_orders(self, request, queryset):
         for order in queryset:
-            order.submitted = None
-            order.save()
-
-    submit_orders.short_description = "Ausgewählte Bestellungen einreichen"
-    reopen_orders.short_description = "Ausgewählte Bestellungen erneut öffnen"
+            if order.ordered:
+                order.ordered = None
+                order.save(update_fields=['ordered'])
+                self.message_user(request, f"Bestellung #{order.pk} erneut geöffnet.", level=messages.SUCCESS)
+            else:
+                self.message_user(request, f"Bestellung #{order.pk} war nicht eingereicht.", level=messages.WARNING)
 
     def has_change_permission(self, request, obj=None):
+        # Cannot edit submitted orders
         return not (obj and obj.ordered)
 
     def has_delete_permission(self, request, obj=None):
+        # Cannot delete submitted orders
         return not (obj and obj.ordered)
 
 
@@ -78,42 +110,39 @@ class DeliveryArticleInline(admin.TabularInline):
     model = DeliveryArticle
     fields = ('article', 'quantity', 'price')
     extra = 1
+    readonly_fields = ('checked_in',)
 
 
 @admin.register(Delivery)
 class DeliveryAdmin(admin.ModelAdmin):
-    list_display = ('vendor', 'order', 'delivery_number', 'delivery_date')
+    list_display = ('vendor', 'order', 'delivery_number', 'delivery_date', 'checked_in')
     inlines = [DeliveryArticleInline]
     actions = ['check_in']
 
+    @admin.action(description="Ausgewählte Lieferungen ins Lager einbuchen")
     def check_in(self, request, queryset):
         for delivery in queryset:
-            DeliveryService.check_in_delivery(delivery)
+            try:
+                DeliveryService.check_in_delivery(delivery)
+                self.message_user(
+                    request,
+                    f"Lieferung {delivery.delivery_number} erfolgreich eingebucht.",
+                    level=messages.SUCCESS
+                )
+            except ValidationError as e:
+                self.message_user(
+                    request,
+                    f"Lieferung {delivery.delivery_number} konnte nicht eingebucht werden: {e}",
+                    level=messages.ERROR
+                )
 
     def has_change_permission(self, request, obj=None):
+        # Prevent editing checked-in deliveries
         return not (obj and obj.checked_in)
 
     def has_delete_permission(self, request, obj=None):
+        # Prevent deleting checked-in deliveries
         return not (obj and obj.checked_in)
-
-
-@admin.register(DeliveryArticle)
-class DeliveryArticleAdmin(admin.ModelAdmin):
-    list_display = ('delivery', 'article', 'quantity', 'checked_in')
-    actions = ['check_in']
-
-    def check_in(self, request, queryset):
-        for delivery in queryset:
-            delivery.check_in()
-
-    check_in.short_description = "Ausgewählte Lieferartikel ins Lager überführen"
-
-    def has_change_permission(self, request, obj=None):
-        return not (obj and obj.checked_in)
-
-    def has_delete_permission(self, request, obj=None):
-        return not (obj and obj.checked_in)
-
 
 @admin.register(Service)
 class ServiceAdmin(admin.ModelAdmin):

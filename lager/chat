@@ -1,0 +1,728 @@
+from decimal import Decimal
+from django.core.exceptions import ValidationError
+from django.core.validators import MinValueValidator
+from django.db import models, transaction
+from django.db.models import Sum, F
+from django.db.models.functions import Coalesce
+from django.urls import reverse
+from django.utils import timezone
+
+
+ZERO_DECIMAL = Decimal('0.00')
+
+def decimal_field_default():
+    return models.DecimalField(
+        default=Decimal('0.00'),
+        max_digits=10,
+        decimal_places=2,
+        validators=[MinValueValidator(0)]
+    )
+
+
+class MovementType(models.IntegerChoices):
+    IN = 1, 'Zugang'
+    OUT = 2, 'Abgang'
+    RESERVED = 3, 'Reserviert'
+    USED = 4, 'Verwendet'
+
+
+class Manufacturer(models.Model):
+    name = models.CharField(max_length=100)
+
+    class Meta:
+        ordering = ['name']
+        verbose_name = 'Hersteller'
+        verbose_name_plural = 'Hersteller'
+
+    def __str__(self):
+        return self.name
+
+
+class Vendor(models.Model):
+    name = models.CharField(max_length=100)
+    email = models.EmailField(blank=True, null=True)
+    phone = models.CharField(max_length=25, blank=True, null=True)
+    country = models.CharField(max_length=100, default='Deutschland')
+    postal = models.CharField(max_length=5)
+    city = models.CharField(max_length=50, default='Nürnberg')
+    street = models.CharField(max_length=100)
+    str_no = models.CharField(max_length=20)
+
+    class Meta:
+        ordering = ['name']
+        verbose_name = 'Händler'
+        verbose_name_plural = 'Händler'
+
+    def __str__(self):
+        return self.name
+
+
+class ArticleType(models.Model):
+    parent = models.ForeignKey('self', null=True, blank=True, on_delete=models.PROTECT, related_name='children',
+        verbose_name='Übergeordneter Typ')
+    name = models.CharField(max_length=100)
+
+    class Meta:
+        ordering = ['name']
+        verbose_name = 'Artikeltyp'
+        verbose_name_plural = 'Artikeltypen'
+
+    def __str__(self):
+        return self.name
+
+
+class AbstractArticle(models.Model):
+    manufacturer = models.ForeignKey(Manufacturer, on_delete=models.PROTECT, verbose_name='Hersteller')
+    type = models.ForeignKey(ArticleType, on_delete=models.CASCADE, verbose_name='Typ')
+    name = models.CharField(max_length=100)
+    description = models.TextField(blank=True, verbose_name='Beschreibung')
+    ean = models.CharField(max_length=50, unique=True, verbose_name='EAN')
+    price = models.DecimalField(
+        max_digits=10, decimal_places=2, null=True, blank=True,
+        validators=[MinValueValidator(0)], verbose_name='Preis [VK]'
+    )
+
+    class Meta:
+        abstract = True
+        ordering = ['type', 'manufacturer', 'name']
+
+    def __str__(self):
+        return f'{self.manufacturer} - {self.name}'
+
+
+class Article(AbstractArticle):
+    minimum = models.PositiveSmallIntegerField(default=0, validators=[MinValueValidator(0)])
+
+    class Meta:
+        verbose_name = 'Artikel'
+        verbose_name_plural = 'Artikel'
+
+    def __str__(self):
+        return self.name
+
+    def get_stock_quantity(self) -> int:
+        return self.stock_articles.aggregate(total=Coalesce(Sum('quantity'), 0))['total']
+
+    def get_reserved_quantity(self) -> int:
+        from werkstatt.models import StockArticleReservation
+        return StockArticleReservation.objects.filter(
+            stock_article__article=self
+        ).aggregate(total=Coalesce(Sum('quantity'), 0))['total']
+
+    def get_requested_quantity(self) -> int:
+        from werkstatt.models import StockArticleRequest
+        return StockArticleRequest.objects.filter(
+            stock_article__article=self
+        ).aggregate(total=Coalesce(Sum('quantity'), 0))['total']
+
+    def get_available_quantity(self) -> int:
+        return max(0, self.get_stock_quantity() - self.get_reserved_quantity() - self.get_requested_quantity())
+
+    def get_ordered_quantity(self) -> int:
+        return SupplyOrderArticle.objects.filter(
+            order__ordered__isnull=False,
+            order__deliveries__isnull=True,
+            article=self
+        ).aggregate(total=Coalesce(Sum('quantity'), 0))['total']
+
+    def get_future_quantity(self) -> int:
+        return self.get_available_quantity() + self.get_ordered_quantity()
+
+    def get_avg_price(self) -> Decimal:
+        agg = self.stock_articles.aggregate(
+            total_value=Sum(F('price') * F('quantity')),
+            total_qty=Coalesce(Sum('quantity'), 0)
+        )
+        if not agg['total_qty']:
+            return ZERO_DECIMAL
+        return (agg['total_value'] / agg['total_qty']).quantize(Decimal('0.01'))
+
+
+class StockArticleManager(models.Manager):
+    @transaction.atomic
+    def get_or_create_empty(self, *, article, price):
+        obj = self.filter(article=article, price=price).first()
+        if obj:
+            return obj
+
+        obj = self.model(
+            article=article,
+            price=price,
+            quantity=0,
+        )
+        obj._save_internal(force_insert=True)
+        return obj
+
+
+class StockArticle(models.Model):
+    article = models.ForeignKey(Article, on_delete=models.PROTECT, related_name='stock_articles', verbose_name='Lagerartikel')
+    price = models.DecimalField(max_digits=7, decimal_places=2, validators=[MinValueValidator(0)])
+
+    class Meta:
+        ordering = ['article']
+        verbose_name = 'Lagerartikel'
+        verbose_name_plural = 'Lagerartikel'
+
+    def __str__(self):
+        return self.article.name
+
+    def get_quantity(self):
+        """Sum of all movements IN/OUT/USED/RESERVED."""
+        agg = self.movements.aggregate(
+            total_in=Coalesce(Sum('quantity', filter=models.Q(movement_type__in=[MovementType.IN, MovementType.RESERVED])), 0),
+            total_out=Coalesce(Sum('quantity', filter=models.Q(movement_type__in=[MovementType.OUT, MovementType.USED])), 0)
+        )
+        return agg['total_in'] - agg['total_out']
+
+    def get_reserved_quantity(self) -> int:
+        return self.movements.filter(movement_type=MovementType.RESERVED).aggregate(
+            total=Coalesce(Sum('quantity'), 0)
+        )['total']
+
+    def get_available_quantity(self):
+        return max(0, self.get_total_quantity() - self.get_reserved_quantity())
+
+    def get_requested_quantity(self) -> int:
+        from werkstatt.models import StockArticleRequest
+        from django.db.models import Sum
+        from django.db.models.functions import Coalesce
+
+        return (
+            StockArticleRequest.objects
+            .filter(stock_article=self)
+            .aggregate(total=Coalesce(Sum("quantity"), 0))["total"]
+        )
+
+    def get_ordered_quantity(self):
+        return SupplyOrderArticle.objects.filter(
+            article=self.article,
+            price=self.price,
+            order__ordered__isnull=False,
+            order__deliveries__isnull=True,
+        ).aggregate(total=Coalesce(Sum("quantity"), 0))["total"]
+
+    def get_future_quantity(self) -> int:
+        """Available + ordered but not yet delivered."""
+        from .models import SupplyOrderArticle
+        return self.get_available_quantity() + SupplyOrderArticle.objects.filter(
+            article=self.article,
+            order__ordered__isnull=False,
+            order__deliveries__isnull=True
+        ).aggregate(total=Coalesce(Sum('quantity'), 0))['total']
+
+class StockMovement(models.Model):
+    stock_article = models.ForeignKey(StockArticle, on_delete=models.PROTECT, related_name='movements')
+    quantity = models.PositiveSmallIntegerField(validators=[MinValueValidator(1)])
+    price = models.DecimalField(max_digits=7, decimal_places=2, verbose_name='Preis')
+    movement_type = models.PositiveSmallIntegerField(choices=MovementType.choices)
+    reference = models.CharField(max_length=100)
+    created = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['created']
+        verbose_name = 'Lagerbewegung'
+        verbose_name_plural = 'Lagerbewegungen'
+
+
+class SupplyOrder(models.Model):
+    vendor = models.ForeignKey(Vendor, on_delete=models.PROTECT, verbose_name='Händler')
+    order_number = models.CharField(max_length=100, blank=True, verbose_name='Bestellnummer')
+    created = models.DateTimeField(auto_now_add=True, verbose_name='Erstellt')
+    ordered = models.DateTimeField(blank=True, null=True, verbose_name='Bestellt')
+
+    class Meta:
+        ordering = ['-created']
+        verbose_name = 'Bestellung'
+        verbose_name_plural = 'Bestellungen'
+
+    def __str__(self):
+        return f'#{self.pk} {self.vendor}'
+
+    def submit(self):
+        if not self.ordered:
+            self.ordered = timezone.now()
+            self.save(update_fields=['ordered'])
+
+    def get_absolute_url(self):
+        return reverse('supply_order_detail', kwargs={'pk': self.pk})
+
+    def get_article_count(self):
+        return self.positions.aggregate(total=Sum('quantity'))['total'] or 0
+
+    def get_total_value(self):
+        return round(self.positions.aggregate(total=Sum(F('quantity') * F('price')))['total'] or 0, 2)
+
+
+class SupplyOrderArticle(models.Model):
+    order = models.ForeignKey(SupplyOrder, on_delete=models.CASCADE, related_name='positions', verbose_name='Bestellung')
+    article = models.ForeignKey(Article, on_delete=models.PROTECT, verbose_name='Artikel')
+    quantity = models.PositiveIntegerField(verbose_name='Menge')
+    price = models.DecimalField(max_digits=7, decimal_places=2, verbose_name='Preis [EK]')
+
+    def __str__(self):
+        return f'{self.order} - {self.article}'
+
+    def get_total_value(self):
+        return self.quantity * self.price
+
+
+class Delivery(models.Model):
+    vendor = models.ForeignKey(Vendor, on_delete=models.PROTECT)
+    order = models.ForeignKey(SupplyOrder, on_delete=models.CASCADE, related_name='deliveries', blank=True, null=True)
+    delivery_number = models.CharField(max_length=100)
+    delivery_date = models.DateField()
+    checked_in = models.DateTimeField(blank=True, null=True)
+
+    class Meta:
+        ordering = ['-delivery_date']
+        verbose_name = 'Lieferung'
+        verbose_name_plural = 'Lieferungen'
+
+    def __str__(self):
+        return f'{self.delivery_number} {self.vendor}'
+
+    def get_absolute_url(self):
+        return reverse("delivery_detail", kwargs={"pk": self.pk})
+
+    def get_article_count(self):
+        return self.articles.aggregate(total=Sum('quantity'))['total'] or 0
+
+    def get_total_value(self):
+        return round(self.articles.aggregate(total=Sum(F('quantity') * F('price')))['total'] or 0, 2)
+
+
+class DeliveryArticle(models.Model):
+    delivery = models.ForeignKey(Delivery, on_delete=models.PROTECT, related_name='articles', verbose_name='Lieferung')
+    article = models.ForeignKey(Article, on_delete=models.PROTECT, related_name='deliveries', verbose_name='Lieferartikel')
+    quantity = models.PositiveIntegerField(verbose_name='Menge')
+    price = models.DecimalField(max_digits=7, decimal_places=2, verbose_name='Preis [EK]')
+    checked_in = models.DateTimeField(blank=True, null=True, verbose_name='Eingelagert')
+
+    class Meta:
+        verbose_name = 'Lieferartikel'
+        verbose_name_plural = 'Lieferartikel'
+
+    @transaction.atomic
+    def save(self, *args, **kwargs):
+        if self.pk:
+            old = DeliveryArticle.objects.get(pk=self.pk)
+            if old.checked_in:
+                raise ValidationError('Cannot modify a finalized receipt!')
+        super().save(*args, **kwargs)
+
+    def get_total_value(self):
+        return round(self.quantity * self.price, 2)
+
+
+class AbstractService(models.Model):
+    MAIN_CATEGORIES = (
+        ('1', 'Auftragsannahme | Inspektion | Dienstleistung | Diverses'),
+        ('2', 'Rahmen'),
+        ('3', 'Räder | Bereifung'),
+        ('4', 'Tretlager | Pedale | Antrieb'),
+        ('5', 'Kettenschaltung | Nabenschaltung'),
+        ('6', 'Bremsen'),
+        ('7', 'Lichtanlage | Reflektoren'),
+        ('8', 'E-Bike Sonderarbeiten'),
+    )
+    SUB_CATEGORIES = (
+        ('1', 'Zubehörmontage'),
+        ('2', 'Lenker | Vorbau'),
+        ('3', 'Gabel | Lenkkopflager'),
+        ('4', 'Gabelfederung'),
+        ('5', 'Hinterbaufederung'),
+        ('6', 'Sattel | Sattelstütze'),
+        ('7', 'Gepäckträger | Rad- und Kettenschützer'),
+        ('8', 'Vorderradnabe'),
+        ('9', 'Hinterradnabe'),
+        ('10', 'Pedale'),
+        ('11', 'Kette'),
+        ('12', 'Riemen'),
+        ('13', 'Hydraulikbremse'),
+        ('14', 'Scheibenbremse'),
+        ('15', 'Software | Systemkontrolle | Fehler-Diagnose'),
+        ('16', 'Instandsetzung'),
+    )
+    main_category = models.CharField(choices=MAIN_CATEGORIES, max_length=100)
+    sub_category = models.CharField(choices=SUB_CATEGORIES, max_length=100, blank=True, null=True)
+    number = models.PositiveSmallIntegerField()
+    name = models.CharField(max_length=100)
+    children_bike = decimal_field_default()
+    hub_gear = decimal_field_default()
+    derailleur = decimal_field_default()
+    mtb = decimal_field_default()
+    road_bike = decimal_field_default()
+    cargo_bike = decimal_field_default()
+    hub_engine = decimal_field_default()
+    mid_engine = decimal_field_default()
+
+    class Meta:
+        abstract = True
+        ordering = ['name']
+
+    def __str__(self):
+        return self.name
+
+    def get_work_value_for_type(self, bike_type: str) -> Decimal:
+        return getattr(self, bike_type, Decimal('0.00'))
+
+
+class Service(AbstractService):
+    class Meta:
+        verbose_name = 'Service'
+        verbose_name_plural = 'Services'
+
+
+
+
+from decimal import Decimal
+from django.core.validators import MinValueValidator
+from django.db import models
+from django.urls import reverse
+from django.utils import timezone
+
+from lager.models import decimal_field_default, ArticleType, StockArticle, Service, Manufacturer
+
+BIKE_TYPES = (
+    ('children_bike', "Children's bike"),
+    ('hub_gear', 'Hub Gear'),
+    ('derailleur', 'Derailleur'),
+    ('mtb', 'MTB'),
+    ('road_bike', 'Road Bike'),
+)
+
+
+class Customer(models.Model):
+    name = models.CharField(max_length=100)
+    email = models.EmailField(blank=True, null=True)
+    phone = models.CharField(max_length=25, blank=True, null=True)
+    postal = models.CharField(max_length=5)
+    city = models.CharField(max_length=50, default="Nürnberg")
+    street = models.CharField(max_length=100)
+    str_no = models.CharField(max_length=20)
+
+    class Meta:
+        verbose_name = 'Kunde'
+        verbose_name_plural = 'Kunden'
+
+    def __str__(self):
+        return self.name
+
+    def get_absolute_url(self):
+        return reverse("customer_detail", kwargs={"pk": self.pk})
+
+    def get_open_repairs(self):
+        return self.repairorder_set.filter(date_finished__isnull=True).count()
+
+
+class RepairOrder(models.Model):
+    customer = models.ForeignKey(Customer, on_delete=models.PROTECT)
+    date_created = models.DateTimeField(auto_now_add=True)
+    date_finished = models.DateTimeField(blank=True, null=True)
+    description = models.TextField(blank=True)
+    bike_type = models.CharField(max_length=50, blank=True, null=True)
+    bike_model = models.CharField(max_length=50, blank=True, null=True)
+    color = models.CharField(max_length=30, blank=True, null=True)
+    serial_number = models.CharField(max_length=50, blank=True, null=True)
+
+    class Meta:
+        verbose_name = 'Reparaturauftrag'
+        verbose_name_plural = 'Reparaturaufträge'
+        ordering = ['-date_created']
+
+    def __str__(self):
+        return f"RO #{self.pk} - {self.customer}"
+
+    def get_absolute_url(self):
+        return reverse("repair_order_detail", kwargs={"pk": self.pk})
+
+    def get_total_article_price(self):
+        return sum((roa.stock_article.article.price or 0) * roa.quantity for roa in self.articles.all())
+
+
+
+class RepairOrderArticle(models.Model):
+    order = models.ForeignKey(RepairOrder, on_delete=models.CASCADE, related_name='articles')
+    stock_article = models.ForeignKey(StockArticle, on_delete=models.PROTECT)
+    quantity = models.PositiveIntegerField(default=1)
+
+    class Meta:
+        verbose_name = 'Artikel im Reparaturauftrag'
+        verbose_name_plural = 'Artikel im Reparaturauftrag'
+
+    def __str__(self):
+        return f"{self.stock_article} x {self.quantity}"
+
+    def get_total(self):
+        return self.quantity * self.stock_article.article.price
+
+
+class RepairOrderService(models.Model):
+    order = models.ForeignKey(RepairOrder, on_delete=models.CASCADE, related_name='services')
+    service = models.ForeignKey(Service, on_delete=models.PROTECT)
+    quantity = models.PositiveIntegerField(default=1)
+
+    class Meta:
+        verbose_name = 'Service im Reparaturauftrag'
+        verbose_name_plural = 'Services im Reparaturauftrag'
+
+    def __str__(self):
+        return f"{self.service.name} x {self.quantity}"
+
+    def get_work_value(self):
+        return self.service.get_work_value_for_type(self.order.bike_type)
+
+
+class StockArticleReservation(models.Model):
+    repair_order_article = models.ForeignKey(RepairOrderArticle, on_delete=models.CASCADE, related_name='reservations')
+    stock_article = models.ForeignKey(StockArticle, on_delete=models.CASCADE, related_name='reservations')
+    quantity = models.PositiveIntegerField(default=0)
+
+    class Meta:
+        verbose_name = 'Reservierter Lagerartikel'
+        verbose_name_plural = 'Reservierte Lagerartikel'
+
+    def __str__(self):
+        return f"{self.stock_article} reserviert für {self.repair_order_article} ({self.quantity})"
+
+
+class StockArticleRequest(models.Model):
+    repair_order_article = models.ForeignKey(RepairOrderArticle, on_delete=models.CASCADE, related_name='requests')
+    stock_article = models.ForeignKey(StockArticle, on_delete=models.CASCADE, related_name='requests')
+    quantity = models.PositiveIntegerField(default=0)
+    created = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        verbose_name = 'Angeforderter Lagerartikel'
+        verbose_name_plural = 'Angeforderte Lagerartikel'
+        ordering = ['created']
+
+    def __str__(self):
+        return f"{self.stock_article} angefordert für {self.repair_order_article} ({self.quantity})"
+
+
+class WorkRate(models.Model):
+    rate = models.DecimalField(max_digits=10, decimal_places=2, default=Decimal("50.00"),
+                               validators=[MinValueValidator(0)])
+    start_date = models.DateField(default=timezone.now)
+    end_date = models.DateField(blank=True, null=True)
+
+    class Meta:
+        verbose_name = 'Arbeitswertsatz'
+        verbose_name_plural = 'Arbeitswertsätze'
+        ordering = ['-start_date']
+
+    @staticmethod
+    def get_current_rate() -> Decimal:
+        current = WorkRate.objects.filter(
+            start_date__lte=timezone.now(),
+        ).order_by('-start_date').first()
+        return current.rate if current else Decimal("50.00")
+
+    def __str__(self):
+        return f"{self.rate} €/h ab {self.start_date}"
+
+
+class Invoice(models.Model):
+    date_paid = models.DateTimeField(default=timezone.now)
+    customer = models.ForeignKey(Customer, on_delete=models.PROTECT)
+    postal = models.CharField(max_length=5)
+    city = models.CharField(max_length=50)
+    street = models.CharField(max_length=100)
+    str_no = models.CharField(max_length=20)
+    description = models.TextField(blank=True)
+    bike_type = models.CharField(max_length=50, blank=True, null=True)
+    bike_model = models.CharField(max_length=50, blank=True, null=True)
+    color = models.CharField(max_length=30, blank=True, null=True)
+    serial_number = models.CharField(max_length=50, blank=True, null=True)
+
+    class Meta:
+        ordering = ['-date_paid']
+        verbose_name = 'Rechnung'
+        verbose_name_plural = 'Rechnungen'
+
+    def __str__(self):
+        return f"Rechnung #{self.pk} - {self.customer}"
+
+
+class InvoiceArticle(models.Model):
+    invoice = models.ForeignKey(Invoice, on_delete=models.CASCADE, related_name='articles')
+    manufacturer = models.ForeignKey(Manufacturer, on_delete=models.PROTECT)
+    type = models.ForeignKey(ArticleType, on_delete=models.PROTECT)
+    name = models.CharField(max_length=100)
+    description = models.TextField(blank=True)
+    ean = models.CharField(max_length=13, blank=True, null=True)
+    price = models.DecimalField(max_digits=10, decimal_places=2, default=Decimal("0.00"),
+                                validators=[MinValueValidator(0)])
+    quantity = models.PositiveIntegerField(default=1, validators=[MinValueValidator(1)])
+
+    class Meta:
+        verbose_name = 'Rechnungsartikel'
+        verbose_name_plural = 'Rechnungsartikel'
+
+    def total(self) -> Decimal:
+        return self.price * self.quantity
+
+
+class InvoiceService(models.Model):
+    invoice = models.ForeignKey(Invoice, on_delete=models.CASCADE, related_name='services')
+    main_category = models.CharField(max_length=100)
+    sub_category = models.CharField(max_length=100, blank=True, null=True)
+    number = models.PositiveSmallIntegerField()
+    name = models.CharField(max_length=100)
+    children_bike = decimal_field_default()
+    hub_gear = decimal_field_default()
+    derailleur = decimal_field_default()
+    mtb = decimal_field_default()
+    road_bike = decimal_field_default()
+    cargo_bike = decimal_field_default()
+    hub_engine = decimal_field_default()
+    mid_engine = decimal_field_default()
+    price = decimal_field_default()
+    quantity = models.PositiveIntegerField(default=1, validators=[MinValueValidator(1)])
+
+    class Meta:
+        verbose_name = 'Rechnungsservice'
+        verbose_name_plural = 'Rechnungsservices'
+
+    def total(self) -> Decimal:
+        return self.price * self.quantity
+
+
+
+
+
+from decimal import Decimal
+from django.db import transaction
+from django.utils import timezone
+
+from lager.services import StockService
+from werkstatt.models import (
+    RepairOrder, RepairOrderArticle, RepairOrderService,
+    Invoice, InvoiceArticle, InvoiceService,
+    StockArticleReservation, StockArticleRequest,
+    WorkRate
+)
+from lager.models import StockArticle, StockMovement, MovementType
+
+
+class InvoiceCreationService:
+    @staticmethod
+    @transaction.atomic
+    def create_invoice(order: RepairOrder) -> Invoice:
+        """
+        Erstellt eine Rechnung aus einem RepairOrder inkl. Artikel und Services.
+        Löscht den RepairOrder nach erfolgreicher Erstellung.
+        """
+        invoice = Invoice.objects.create(
+            date_paid=timezone.now(),
+            customer=order.customer,
+            postal=order.customer.postal,
+            city=order.customer.city,
+            street=order.customer.street,
+            str_no=order.customer.str_no,
+            description=order.description,
+            bike_type=order.bike_type,
+            bike_model=order.bike_model,
+            color=order.color,
+            serial_number=order.serial_number,
+        )
+
+        invoice_articles = [
+            InvoiceArticle(
+                manufacturer=roa.stock_article.article.manufacturer,
+                type=roa.stock_article.article.type,
+                name=roa.stock_article.article.name,
+                description=roa.stock_article.article.description,
+                ean=roa.stock_article.article.ean,
+                price=roa.stock_article.article.price,
+                invoice=invoice,
+                quantity=roa.quantity,
+            )
+            for roa in order.articles.all()
+        ]
+        InvoiceArticle.objects.bulk_create(invoice_articles)
+
+        invoice_services = [
+            InvoiceService(
+                main_category=ros.service.main_category,
+                sub_category=ros.service.sub_category,
+                number=ros.service.number,
+                name=ros.service.name,
+                children_bike=ros.service.children_bike,
+                hub_gear=ros.service.hub_gear,
+                derailleur=ros.service.derailleur,
+                mtb=ros.service.mtb,
+                road_bike=ros.service.road_bike,
+                cargo_bike=ros.service.cargo_bike,
+                hub_engine=ros.service.hub_engine,
+                mid_engine=ros.service.mid_engine,
+                invoice=invoice,
+                quantity=ros.quantity,
+                price=RepairOrderPricingService.calculate_service_price(ros)
+            )
+            for ros in order.services.all()
+        ]
+        InvoiceService.objects.bulk_create(invoice_services)
+
+        # Consume reserved stock when invoicing
+        for roa in order.articles.all():
+            StockService.consume_reserved(
+                stock_article=roa.stock_article,
+                quantity=roa.quantity,
+                reference=f"RO #{order.pk} Invoice #{invoice.pk}"
+            )
+
+        order.delete()
+        return invoice
+
+
+
+class RepairOrderPricingService:
+    @staticmethod
+    def calculate_service_price(ros: RepairOrderService) -> Decimal:
+        work_value = ros.get_work_value()
+        work_rate = WorkRate.get_current_rate()
+        return (work_value / Decimal(10)) * work_rate
+
+    @staticmethod
+    def get_total_services_price(order: RepairOrder) -> Decimal:
+        return sum(RepairOrderPricingService.calculate_service_price(s) for s in order.services.all())
+
+    @staticmethod
+    def get_total(order: RepairOrder) -> Decimal:
+        return RepairOrderPricingService.get_total_services_price(order) + order.get_total_article_price()
+
+class RepairOrderHandler:
+    @staticmethod
+    @transaction.atomic
+    def update_quantity(order, stock_article: StockArticle, new_qty: int):
+        from werkstatt.models import RepairOrderArticle
+        # Lock stock article for concurrency
+        sa = StockArticle.objects.select_for_update().get(pk=stock_article.pk)
+
+        roa, _ = RepairOrderArticle.objects.get_or_create(order=order, stock_article=sa, defaults={"quantity": 0})
+        current_total = roa.quantity
+
+        if new_qty > current_total:
+            delta = new_qty - current_total
+            StockService.reserve_stock(stock_article=sa, quantity=delta, reference=f"RO #{order.pk}")
+        elif new_qty < current_total:
+            delta = current_total - new_qty
+            # Cancel reserved movements
+            movements = sa.movements.filter(movement_type=MovementType.RESERVED).order_by('-created')
+            qty_to_reduce = delta
+            for mv in movements:
+                if mv.quantity <= qty_to_reduce:
+                    qty_to_reduce -= mv.quantity
+                    mv.delete()
+                else:
+                    mv.quantity -= qty_to_reduce
+                    mv.save(update_fields=['quantity'])
+                    break
+
+        roa.quantity = new_qty
+        if new_qty > 0:
+            roa.save(update_fields=['quantity'])
+        else:
+            roa.delete()

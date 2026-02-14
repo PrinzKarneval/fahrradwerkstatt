@@ -201,7 +201,7 @@ class RepairOrderArticleAdd(CreateView):
         )
         sa = form.cleaned_data['stock_article']
         RepairOrderHandler.update_quantity(ro, sa , roa.quantity + form.instance.quantity)
-        return HttpResponseRedirect(reverse('repair_order_detail', args=[self.kwargs.get('pk')], context={"messages": "adskjla"}))
+        return HttpResponseRedirect(reverse('repair_order_detail', args=[self.kwargs.get('pk')]))
 
     def get_success_url(self):
         return reverse('repair_order_detail', args=[self.kwargs['pk']])
@@ -309,13 +309,14 @@ class InvoiceCreateFromRepairOrder(CreateView):
     def create_invoice_articles(repair_order, invoice):
         repair_order_articles = repair_order.repairorderarticle_set.all()
         for roa in repair_order_articles:
+            article = roa.stock_article.article
             InvoiceArticle.objects.create(
-                manufacturer=roa.stock_article.manufacturer,
-                type=roa.stock_article.type,
-                name=roa.stock_article.name,
-                description=roa.stock_article.description,
-                ean=roa.stock_article.ean,
-                price=roa.stock_article.price,
+                manufacturer=article.manufacturer,
+                type=article.type,
+                name=article.name,
+                description=article.description,
+                ean=article.ean,
+                price=roa.stock_article.price,  # keep stock price
                 invoice=invoice,
                 quantity=roa.quantity,
             )

@@ -28,7 +28,6 @@ urlpatterns = [
     path('', include('werkstatt.urls')),
     path('lager/', include('lager.urls')),
     path('admin/', admin.site.urls),
-    path('admin/', admin.site.urls),
 ]
 
 

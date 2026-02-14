@@ -1,107 +1,91 @@
 {% extends "base.html" %}
 {% block content %}
-<style>.clickable-row {cursor: pointer;}</style>
+<style>
+    .clickable-row { cursor: pointer; }
+    .article-spacer td { padding: 0; border: 0; height: 5px; }
+</style>
+
 <h1>Lager</h1>
-<input type="search" autofocus="autofocus" id="search" class="form-control my-3" placeholder="#/Typ/Hersteller/Artikel suchen...">
+
+<input type="search" autofocus id="search" class="form-control my-3" placeholder="#/Typ/Hersteller/Artikel suchen...">
+
 <table class="table table-hover">
     <thead>
-    <tr class="table-secondary">
-        <th>#</th>
-        <th>Typ</th>
-        <th>Hersteller</th>
-        <th>Artikel</th>
-        <th>Preis</th>
-        <th>Bestand</th>
-        <th>Reserviert</th>
-        <th>Verfügbar</th>
-        <th>Bedarf</th>
-        <th>Bestellt</th>
-        <th>Zukünftig</th>
-    </tr>
+        <tr class="table-secondary">
+            <th>#</th>
+            <th>Typ</th>
+            <th>Hersteller</th>
+            <th>Artikel</th>
+            <th>Preis</th>
+            <th>Bestand</th>
+            <th>Reserviert</th>
+            <th>Verfügbar</th>
+            <th>Bedarf</th>
+            <th>Bestellt</th>
+            <th>Zukünftig</th>
+        </tr>
     </thead>
     <tbody>
-    {% for a in articles %}
-        <tr class="table-light article clickable-row" data-article="{{ a.pk }}" data-href="{{ a.get_absolute_url }}">
-            <td>{{ a.pk }}</td>
-            <td>{{ a.type }}</td>
-            <td>{{ a.manufacturer }}</td>
-            <td>{{ a.name }}</td>
-            <td>~ {{ a.get_avg_price }} €</td>
-            <td>{{ a.get_stock_quantity }}</td>
-            <td>{{ a.get_reserved_quantity }}</td>
-            <td>{{ a.get_available_quantity }}</td>
-            <td>{{ a.get_requested_quantity }}</td>
-            <td>{{ a.get_ordered_quantity }}</td>
-            <td>{{ a.get_future_quantity }}</td>
-        </tr>
-        {% for sa in a.stock_articles.all %}
-            <tr class="stock-article clickable-row" data-article="{{ a.pk }}" data-href="{{ a.get_absolute_url }}">
-                <td>{{ sa.pk }}</td>
-                <td colspan="3"></td>
-                <td>{{ sa.price }} €</td>
-                <td>{{ sa.quantity }}</td>
-                <td>{{ sa.get_reserved_quantity }}</td>
-                <td>{{ sa.get_available_quantity }}</td>
-                <td>{{ sa.get_requested_quantity }}</td>
-                <td>{{ sa.get_ordered_quantity }}</td>
-                <td>{{ sa.get_future_quantity }}</td>
+        {% for a in articles %}
+            <tr class="table-light article clickable-row" data-article="{{ a.pk }}" data-href="{{ a.get_absolute_url }}">
+                <td>{{ a.pk }}</td>
+                <td>{{ a.type }}</td>
+                <td>{{ a.manufacturer }}</td>
+                <td>{{ a.name }}</td>
+                <td>~ {{ a.get_avg_price }} €</td>
+                <td>{{ a.get_stock_quantity }}</td>
+                <td>{{ a.get_reserved_quantity }}</td>
+                <td>{{ a.get_available_quantity }}</td>
+                <td>{{ a.get_requested_quantity }}</td>
+                <td>{{ a.get_ordered_quantity }}</td>
+                <td>{{ a.get_future_quantity }}</td>
             </tr>
+
+            {% for sa in a.stock_articles.all %}
+                <tr class="stock-article clickable-row" data-article="{{ a.pk }}" data-href="{{ a.get_absolute_url }}">
+                    <td>{{ sa.pk }}</td>
+                    <td colspan="3"></td>
+                    <td>{{ sa.price }} €</td>
+                    <td>{{ sa.get_quantity }}</td>
+                    <td>{{ sa.get_reserved_quantity }}</td>
+                    <td>{{ sa.get_available_quantity }}</td>
+                    <td>{{ sa.get_requested_quantity }}</td>
+                    <td>{{ sa.get_ordered_quantity }}</td>
+                    <td>{{ sa.get_future_quantity }}</td>
+                </tr>
+            {% endfor %}
+
+            <tr class="article-spacer" data-article="{{ a.pk }}"><td colspan="11"></td></tr>
         {% endfor %}
-        <tr class="article-spacer" data-article="{{ a.pk }}">
-    {% endfor %}
     </tbody>
-    <tfoot></tfoot>
 </table>
 
 <script>
-    document.addEventListener("DOMContentLoaded", function () {
-        document.querySelectorAll(".clickable-row").forEach(function (row) {
-            row.addEventListener("click", function () {
-                window.location.href = this.dataset.href;
-            });
-        });
+document.addEventListener("DOMContentLoaded", function () {
+    // Clickable rows
+    document.querySelectorAll(".clickable-row").forEach(row => {
+        row.addEventListener("click", () => window.location.href = row.dataset.href);
     });
 
+    // Live search
     const searchInput = document.querySelector("#search");
     if (searchInput) {
         searchInput.addEventListener("input", () => {
             const query = searchInput.value.toLowerCase();
 
-            const articleRows = document.querySelectorAll("tr.article");
-            const stockRows = document.querySelectorAll("tr.stock-article");
-            const spacerRows = document.querySelectorAll("tr.article-spacer");
-
-            articleRows.forEach(articleRow => {
-                const cells = articleRow.children;
-                const text =
-                    cells[0].textContent +
-                    cells[1].textContent +
-                    cells[2].textContent +
-                    cells[3].textContent;
-
+            document.querySelectorAll("tr.article").forEach(articleRow => {
+                const articleId = articleRow.dataset.article;
+                const text = Array.from(articleRow.children).slice(0,4).map(td => td.textContent).join("");
                 const match = text.toLowerCase().includes(query);
 
                 articleRow.style.display = match ? "" : "none";
-                const articleId = articleRow.dataset.article;
-                stockRows.forEach(stockRow => {
-                    if (stockRow.dataset.article === articleId) {
-                        stockRow.style.display = match ? "" : "none";
-                    }
-                    if (!query) {
-                        articleRow.style.display = "";
-                        stockRow.style.display = "";
-                        stockRow.style.display = "";
-                        return;
-                    }
-                });
-                spacerRows.forEach(row => {
-                    if (row.dataset.article === articleId) {
-                        row.style.display = match ? "" : "none";
-                    }
-                });
 
+                // Stock articles and spacers
+                document.querySelectorAll(`tr.stock-article[data-article='${articleId}'], tr.article-spacer[data-article='${articleId}']`)
+                    .forEach(row => row.style.display = match ? "" : "none");
             });
         });
     }
+});
 </script>
 {% endblock content %}

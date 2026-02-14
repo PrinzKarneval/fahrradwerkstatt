@@ -4,7 +4,8 @@ from django.db import models
 from django.urls import reverse
 from django.utils import timezone
 
-from lager.models import decimal_field_default, ArticleType, StockArticle, Service, Manufacturer
+from lager.models import decimal_field_default, ArticleType, StockArticle, Service, Manufacturer, MovementType, \
+    ZERO_DECIMAL
 
 BIKE_TYPES = (
     ('children_bike', "Children's bike"),
@@ -76,8 +77,16 @@ class RepairOrderArticle(models.Model):
     def __str__(self):
         return f"{self.stock_article} x {self.quantity}"
 
-    def get_total(self):
-        return self.quantity * self.stock_article.article.price
+    def get_unit_price(self) -> Decimal:
+        latest_in = self.stock_article.movements.filter(
+            movement_type=MovementType.IN
+        ).order_by('-id').first()
+        if latest_in:
+            return latest_in.price
+        return self.stock_article.price or ZERO_DECIMAL
+
+    def get_total(self) -> Decimal:
+        return (self.get_unit_price() * self.quantity).quantize(Decimal('0.01'))
 
 
 class RepairOrderService(models.Model):

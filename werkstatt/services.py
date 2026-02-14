@@ -1,24 +1,23 @@
 from decimal import Decimal
+
+from django.core.exceptions import ValidationError
 from django.db import transaction
 from django.utils import timezone
 
+from lager.services import StockService
 from werkstatt.models import (
     RepairOrder, RepairOrderArticle, RepairOrderService,
     Invoice, InvoiceArticle, InvoiceService,
     StockArticleReservation, StockArticleRequest,
     WorkRate
 )
-from lager.models import StockArticle, StockMovement
+from lager.models import StockArticle, StockMovement, MovementType
 
 
 class InvoiceCreationService:
     @staticmethod
     @transaction.atomic
     def create_invoice(order: RepairOrder) -> Invoice:
-        """
-        Erstellt eine Rechnung aus einem RepairOrder inkl. Artikel und Services.
-        Löscht den RepairOrder nach erfolgreicher Erstellung.
-        """
         invoice = Invoice.objects.create(
             date_paid=timezone.now(),
             customer=order.customer,
@@ -33,6 +32,7 @@ class InvoiceCreationService:
             serial_number=order.serial_number,
         )
 
+        # Articles
         invoice_articles = [
             InvoiceArticle(
                 manufacturer=roa.stock_article.article.manufacturer,
@@ -48,6 +48,7 @@ class InvoiceCreationService:
         ]
         InvoiceArticle.objects.bulk_create(invoice_articles)
 
+        # Services
         invoice_services = [
             InvoiceService(
                 main_category=ros.service.main_category,
@@ -69,19 +70,18 @@ class InvoiceCreationService:
             for ros in order.services.all()
         ]
         InvoiceService.objects.bulk_create(invoice_services)
+
+        # ✅ Consume reserved stock for all articles
+
+        for roa in order.articles.select_for_update().select_related('stock_article'):
+            StockService.consume_reserved(
+                stock_article=roa.stock_article,
+                quantity=roa.quantity,
+                reference=f"RO #{order.pk} Invoice #{invoice.pk}"
+            )
+
         order.delete()
         return invoice
-
-"""        for roa in order.articles.all():
-            sa = roa.stock_article
-            if sa.get_available_quantity() >= roa.quantity:
-                StockMovement.objects.create(
-                    stock_article=sa,
-                    quantity=roa.quantity,
-                    movement_type=StockMovement.OUT,
-                    reference=f"RO #{order.pk} Rechnung #{invoice.pk}"
-                )
-"""
 
 
 class RepairOrderPricingService:
@@ -99,95 +99,83 @@ class RepairOrderPricingService:
     def get_total(order: RepairOrder) -> Decimal:
         return RepairOrderPricingService.get_total_services_price(order) + order.get_total_article_price()
 
+
 class RepairOrderHandler:
     @staticmethod
     @transaction.atomic
-    def update_quantity(order: "RepairOrder", stock_article: StockArticle, new_qty: int):
+    def update_quantity(order, stock_article: StockArticle, new_qty: int):
         """
-        Update a RepairOrderArticle for a single StockArticle:
-        - When increasing: reserve available stock first, then create requests
-        - When decreasing: reduce requests first, then reservations
-        """
+        Adjust quantity of a stock article on a repair order.
 
-        # Lock objects for this StockArticle
+        - Reserving available stock first
+        - Creating requests for any remainder if stock insufficient
+        - Reducing requests first when lowering quantity, then releasing reservations
+        """
+        # Lock stock article and ROA for concurrency
         sa = StockArticle.objects.select_for_update().get(pk=stock_article.pk)
-
-        roa, _ = RepairOrderArticle.objects.select_for_update().get_or_create(
+        roa, created = RepairOrderArticle.objects.get_or_create(
             order=order,
             stock_article=sa,
-            defaults={"quantity": 0},
+            defaults={"quantity": 0}
         )
 
-        reservation = (
-            StockArticleReservation.objects.select_for_update()
-            .filter(repair_order_article=roa, stock_article=sa)
-            .first()
-        )
+        current_qty = roa.quantity
+        delta = new_qty - current_qty  # positive = increase, negative = decrease
 
-        request = (
-            StockArticleRequest.objects.select_for_update()
-            .filter(repair_order_article=roa, stock_article=sa)
-            .first()
-        )
+        if delta > 0:
+            # Increasing quantity
+            available = sa.get_available_quantity()
+            to_reserve = min(delta, available)
+            to_request = delta - to_reserve
 
-        current_total = (reservation.quantity if reservation else 0) + (request.quantity if request else 0)
+            if to_reserve > 0:
+                StockService.reserve_stock(
+                    stock_article=sa,
+                    quantity=to_reserve,
+                    reference=f"RO #{order.pk}"
+                )
 
-        if new_qty > current_total:
-            # --- Increasing quantity ---
-            delta = new_qty - current_total
+            if to_request > 0:
+                req, _ = StockArticleRequest.objects.get_or_create(
+                    repair_order_article=roa,
+                    stock_article=sa,
+                    defaults={"quantity": 0}
+                )
+                req.quantity += to_request
+                req.save(update_fields=['quantity'])
 
-            # Step 1: Add to reservation as much as available
-            avail = sa.get_available_quantity()
-            reserve_delta = min(avail, delta)
-            request_delta = delta - reserve_delta
+        elif delta < 0:
+            # Decreasing quantity
+            remaining_to_reduce = abs(delta)
 
-            if reserve_delta > 0:
-                if not reservation:
-                    reservation = StockArticleReservation.objects.create(
-                        repair_order_article=roa, stock_article=sa, quantity=reserve_delta
+            # 1️⃣ Reduce outstanding requests first
+            req = StockArticleRequest.objects.filter(
+                repair_order_article=roa,
+                stock_article=sa
+            ).first()
+            if req:
+                if req.quantity <= remaining_to_reduce:
+                    remaining_to_reduce -= req.quantity
+                    req.delete()
+                else:
+                    req.quantity -= remaining_to_reduce
+                    req.save(update_fields=['quantity'])
+                    remaining_to_reduce = 0
+
+            # 2️⃣ If still remaining, release reserved stock
+            if remaining_to_reduce > 0:
+                reserved = sa.get_reserved_quantity()
+                to_release = min(remaining_to_reduce, reserved)
+                if to_release > 0:
+                    StockService.release_reserved(
+                        stock_article=sa,
+                        quantity=to_release,
+                        reference=f"RO #{order.pk}"
                     )
-                else:
-                    reservation.quantity += reserve_delta
-                    reservation.save(update_fields=["quantity"])
 
-            if request_delta > 0:
-                if not request:
-                    request = StockArticleRequest.objects.create(
-                        repair_order_article=roa, stock_article=sa, quantity=request_delta
-                    )
-                else:
-                    request.quantity += request_delta
-                    request.save(update_fields=["quantity"])
-
-        elif new_qty < current_total:
-            # --- Decreasing quantity ---
-            delta = current_total - new_qty
-
-            # Step 1: Reduce requests first
-            if request:
-                reduce_req = min(request.quantity, delta)
-                request.quantity -= reduce_req
-                delta -= reduce_req
-                if request.quantity <= 0:
-                    request.delete()
-                    request = None
-                else:
-                    request.save(update_fields=["quantity"])
-
-            # Step 2: Reduce reservations
-            if delta > 0 and reservation:
-                reduce_res = min(reservation.quantity, delta)
-                reservation.quantity -= reduce_res
-                if reservation.quantity <= 0:
-                    reservation.delete()
-                    reservation = None
-                else:
-                    reservation.save(update_fields=["quantity"])
-
-        # --- Update or delete ROA ---
-        total_assigned = (reservation.quantity if reservation else 0) + (request.quantity if request else 0)
-        if total_assigned > 0:
-            roa.quantity = total_assigned
-            roa.save(update_fields=["quantity"])
+        # Update or delete ROA
+        if new_qty > 0:
+            roa.quantity = new_qty
+            roa.save(update_fields=['quantity'])
         else:
             roa.delete()
