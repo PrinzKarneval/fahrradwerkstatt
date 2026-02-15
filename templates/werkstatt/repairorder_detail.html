@@ -67,12 +67,12 @@
             <th class="border-0">{{object.get_total_service_price}} €</th>
         </tr>
         <tr class="text-end">
-            <th colspan="7" class="text-start">Teile</th>
+            <th colspan="7" class="text-start pt-4">Teile</th>
         </tr>
         {% for roa in object.articles.all %}
         <tr class="text-end">
             <td class="text-start">
-                {{roa.stock_article.article}}
+                {{ roa.stock_article.article.type }} - {{ roa.stock_article.article.manufacturer }} {{roa.stock_article.article}}
             </td>
             <td>
                 <a class="btn btn-sm btn-outline-primary" href="{% url 'repair_order_article_minus_one' roa.pk %}">-</a>
@@ -98,11 +98,11 @@
             {% else %}
             <th class="border-0" colspan="5">Preis Artikel</th>
             {% endif %}
-            <th class="border-0">{{object.get_total_article_price}} €</th>
+            <th class="border-0">{{object.get_total_articles_price}} €</th>
         </tr>
         <tr class="text-end">
             <th colspan="5">Gesamtpreis</th>
-            <th>{{object.get_total}}</th>
+            <th>{{object.get_total_price}} €</th>
         </tr>
     </table>
     <div class="text-end">

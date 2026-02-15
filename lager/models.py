@@ -1,8 +1,8 @@
 from decimal import Decimal
-from django.core.exceptions import ValidationError
+from django.core.exceptions import ValidationError, PermissionDenied
 from django.core.validators import MinValueValidator
 from django.db import models, transaction
-from django.db.models import Sum, F, ExpressionWrapper, DecimalField, Q
+from django.db.models import Sum, F, Q
 from django.db.models.functions import Coalesce
 from django.urls import reverse
 from django.utils import timezone
@@ -20,11 +20,15 @@ def decimal_field_default():
 
 
 class MovementType(models.IntegerChoices):
-    IN = 1, 'Zugang'
-    OUT = 2, 'Abgang'
-    RESERVED = 3, 'Reserviert'
-    USED = 4, 'Verwendet'
+    IN_DELIVERY = 1, 'IN | LIEFERUNG'
+    OUT_ADJUSTMENT = 2, 'OUT | LIEFERKORREKTUR'
+    OUT_RETURN = 3, 'OUT | LIEFER-RETOUR'
+    OUT_SOLD = 6, 'OUT | VERKAUFT'
+    IN_STORNO = 7, 'IN | RECHNUNG STORNIERT'
+    OUT_SCRAP = 8, 'OUT | AUSSCHUSS'
 
+STOCK_IN = [MovementType.IN_DELIVERY, MovementType.IN_STORNO]
+STOCK_OUT = [MovementType.OUT_ADJUSTMENT, MovementType.OUT_RETURN, MovementType.OUT_SOLD, MovementType.OUT_SCRAP]
 
 class Manufacturer(models.Model):
     name = models.CharField(max_length=100)
@@ -100,57 +104,66 @@ class Article(AbstractArticle):
     def __str__(self):
         return self.name
 
-    def get_stock_quantity(self) -> int:
-        '''Sum of all IN movements minus OUT/USED.'''
-        agg = StockMovement.objects.filter(
-            stock_article__article=self
-        ).aggregate(
-            total_in=Coalesce(Sum('quantity', filter=Q(movement_type__in=[MovementType.IN])), 0),
-            total_out=Coalesce(Sum('quantity', filter=Q(movement_type__in=[MovementType.OUT, MovementType.USED])), 0)
+    def get_stock_quantity(self):
+        agg = StockMovement.objects.filter(stock_article__article=self).aggregate(
+            total_in=Coalesce(Sum('quantity', filter=Q(movement_type__in=STOCK_IN)), 0),
+            total_out=Coalesce(Sum('quantity', filter=Q(movement_type__in=STOCK_OUT)), 0)
         )
         return agg['total_in'] - agg['total_out']
 
-    def get_reserved_quantity(self) -> int:
-        return StockMovement.objects.filter(
-            stock_article__article=self,
-            movement_type=MovementType.RESERVED
-        ).aggregate(total=Coalesce(Sum('quantity'), 0))['total']
+    def get_reserved_quantity(self):
+        from werkstatt.models import StockArticleReservation
+        return StockArticleReservation.objects.filter(stock_article__article=self) \
+            .aggregate(total=Coalesce(Sum('quantity'), 0))['total']
 
-    def get_requested_quantity(self) -> int:
+    def get_requested_quantity(self):
         from werkstatt.models import StockArticleRequest
-        return StockArticleRequest.objects.filter(
-            stock_article__article=self
-        ).aggregate(total=Coalesce(Sum('quantity'), 0))['total']
+        return StockArticleRequest.objects.filter(stock_article__article=self) \
+            .aggregate(total=Coalesce(Sum('quantity'), 0))['total']
 
-    def get_available_quantity(self) -> int:
+    def get_available_quantity(self):
         return max(0, self.get_stock_quantity() - self.get_reserved_quantity() - self.get_requested_quantity())
 
-    def get_ordered_quantity(self) -> int:
+    def get_ordered_quantity(self):
         return SupplyOrderArticle.objects.filter(
+            article=self,
             order__ordered__isnull=False,
-            order__deliveries__isnull=True,
-            article=self
+            order__deliveries__isnull=True
         ).aggregate(total=Coalesce(Sum('quantity'), 0))['total']
 
-    def get_future_quantity(self) -> int:
+    def get_future_quantity(self):
         return self.get_available_quantity() + self.get_ordered_quantity()
 
-    def get_avg_price(self) -> Decimal:
-        '''Weighted average from IN movements only (deliveries).'''
-        agg = StockMovement.objects.filter(
-            stock_article__article=self,
-            movement_type=MovementType.IN
-        ).aggregate(
-            total_value=Coalesce(
-                Sum(ExpressionWrapper(F('price') * F('quantity'),
-                                      output_field=DecimalField(max_digits=12, decimal_places=2))),
-                ZERO_DECIMAL
-            ),
-            total_qty=Coalesce(Sum('quantity'), 0)
+    def get_avg_price(self):
+        stock_articles = (
+            self.stock_articles
+            .annotate(
+                total_in=Coalesce(
+                    Sum('movements__quantity',
+                        filter=Q(movements__movement_type__in=STOCK_IN)), 0
+                ),
+                total_out=Coalesce(
+                    Sum('movements__quantity',
+                        filter=Q(movements__movement_type__in=STOCK_OUT)), 0
+                ),
+            )
+            .annotate(qty=F('total_in') - F('total_out'))
         )
-        if agg['total_qty'] == 0:
+
+        total_qty = 0
+        total_value = Decimal("0.00")
+
+        for sa in stock_articles:
+            if sa.qty <= 0:
+                continue
+
+            total_qty += sa.qty
+            total_value += Decimal(sa.qty) * sa.price
+
+        if total_qty == 0:
             return ZERO_DECIMAL
-        return (agg['total_value'] / agg['total_qty']).quantize(Decimal('0.01'))
+
+        return (total_value / Decimal(total_qty)).quantize(Decimal("0.01"))
 
 
 class StockArticle(models.Model):
@@ -166,48 +179,36 @@ class StockArticle(models.Model):
     def __str__(self):
         return self.article.name
 
-    def get_quantity(self) -> int:
+    def get_quantity(self):
         agg = self.movements.aggregate(
-            total_in=Coalesce(Sum('quantity', filter=Q(movement_type__in=[MovementType.IN])), 0),
-            total_out=Coalesce(Sum('quantity', filter=Q(movement_type__in=[MovementType.OUT, MovementType.USED])), 0)
+            total_in=Coalesce(Sum('quantity', filter=Q(movement_type__in=STOCK_IN)), 0),
+            total_out=Coalesce(Sum('quantity', filter=Q(movement_type__in=STOCK_OUT)), 0)
         )
         return agg['total_in'] - agg['total_out']
 
-    def get_reserved_quantity(self) -> int:
-        return self.movements.filter(movement_type=MovementType.RESERVED).aggregate(total=Coalesce(Sum('quantity'), 0))[
-            'total']
+    def get_reserved_quantity(self):
+        return self.reservations.aggregate(total=Coalesce(Sum('quantity'), 0))['total']
 
-    def get_available_quantity(self) -> int:
-        return max(0, self.get_quantity() - self.get_reserved_quantity())
+    def get_available_quantity(self):
+        return self.get_quantity() - self.get_reserved_quantity()
 
-    def get_requested_quantity(self) -> int:
-        from werkstatt.models import StockArticleRequest
-        from django.db.models import Sum
-        from django.db.models.functions import Coalesce
-
-        return (
-            StockArticleRequest.objects
-            .filter(stock_article=self)
-            .aggregate(total=Coalesce(Sum('quantity'), 0))['total']
-        )
+    def get_requested_quantity(self):
+        return self.requests.aggregate(total=Coalesce(Sum('quantity'), 0))['total']
 
     def get_ordered_quantity(self):
         return SupplyOrderArticle.objects.filter(
             article=self.article,
             price=self.price,
             order__ordered__isnull=False,
-            order__deliveries__isnull=True,
+            order__deliveries__isnull=True
         ).aggregate(total=Coalesce(Sum('quantity'), 0))['total']
 
-    def get_future_quantity(self) -> int:
-        '''
-        Future quantity = available stock - reservations - requests + supply orders not yet delivered
-        '''
+    def get_future_quantity(self):
         stock = self.get_quantity()
         reserved = self.get_reserved_quantity()
         requested = self.get_requested_quantity()
         ordered = self.get_ordered_quantity()
-        return max(0, stock - reserved - requested + ordered)
+        return stock - reserved - requested + ordered
 
 
 class StockMovement(models.Model):
@@ -222,6 +223,16 @@ class StockMovement(models.Model):
         ordering = ['created']
         verbose_name = 'Lagerbewegung'
         verbose_name_plural = 'Lagerbewegungen'
+
+    def save(self, *args, **kwargs):
+        available = self.stock_article.get_available_quantity()
+        if self.movement_type in STOCK_OUT and self.quantity > available:
+            raise ValidationError(f"Can not move {self.quantity} units out of stock. Only {available} available")
+
+        super().save(*args, **kwargs)
+
+    def delete(self, *args, **kwargs):
+        raise PermissionDenied("Dieses Objekt darf nicht gelöscht werden.")
 
 
 class SupplyOrder(models.Model):
@@ -272,6 +283,7 @@ class Delivery(models.Model):
     order = models.ForeignKey(SupplyOrder, on_delete=models.CASCADE, related_name='deliveries', blank=True, null=True)
     delivery_number = models.CharField(max_length=100)
     delivery_date = models.DateField()
+    is_correction = models.BooleanField(default=False)
     checked_in = models.DateTimeField(blank=True, null=True)
 
     class Meta:
@@ -296,9 +308,8 @@ class DeliveryArticle(models.Model):
     delivery = models.ForeignKey(Delivery, on_delete=models.PROTECT, related_name='articles', verbose_name='Lieferung')
     article = models.ForeignKey(Article, on_delete=models.PROTECT, related_name='deliveries',
                                 verbose_name='Lieferartikel')
-    quantity = models.PositiveIntegerField(verbose_name='Menge')
+    quantity = models.PositiveIntegerField(verbose_name='Menge', validators=[MinValueValidator(1)])
     price = models.DecimalField(max_digits=7, decimal_places=2, verbose_name='Preis [EK]')
-    checked_in = models.DateTimeField(blank=True, null=True, verbose_name='Eingelagert')
 
     class Meta:
         verbose_name = 'Lieferartikel'
@@ -307,69 +318,10 @@ class DeliveryArticle(models.Model):
     @transaction.atomic
     def save(self, *args, **kwargs):
         if self.pk:
-            old = DeliveryArticle.objects.get(pk=self.pk)
-            if old.checked_in:
+            delivery = Delivery.objects.get(pk=self.delivery.pk)
+            if delivery.checked_in:
                 raise ValidationError('Cannot modify a finalized receipt!')
         super().save(*args, **kwargs)
 
     def get_total_value(self):
         return round(self.quantity * self.price, 2)
-
-
-class AbstractService(models.Model):
-    MAIN_CATEGORIES = (
-        ('1', 'Auftragsannahme | Inspektion | Dienstleistung | Diverses'),
-        ('2', 'Rahmen'),
-        ('3', 'Räder | Bereifung'),
-        ('4', 'Tretlager | Pedale | Antrieb'),
-        ('5', 'Kettenschaltung | Nabenschaltung'),
-        ('6', 'Bremsen'),
-        ('7', 'Lichtanlage | Reflektoren'),
-        ('8', 'E-Bike Sonderarbeiten'),
-    )
-    SUB_CATEGORIES = (
-        ('1', 'Zubehörmontage'),
-        ('2', 'Lenker | Vorbau'),
-        ('3', 'Gabel | Lenkkopflager'),
-        ('4', 'Gabelfederung'),
-        ('5', 'Hinterbaufederung'),
-        ('6', 'Sattel | Sattelstütze'),
-        ('7', 'Gepäckträger | Rad- und Kettenschützer'),
-        ('8', 'Vorderradnabe'),
-        ('9', 'Hinterradnabe'),
-        ('10', 'Pedale'),
-        ('11', 'Kette'),
-        ('12', 'Riemen'),
-        ('13', 'Hydraulikbremse'),
-        ('14', 'Scheibenbremse'),
-        ('15', 'Software | Systemkontrolle | Fehler-Diagnose'),
-        ('16', 'Instandsetzung'),
-    )
-    main_category = models.CharField(choices=MAIN_CATEGORIES, max_length=100)
-    sub_category = models.CharField(choices=SUB_CATEGORIES, max_length=100, blank=True, null=True)
-    number = models.PositiveSmallIntegerField()
-    name = models.CharField(max_length=100)
-    children_bike = decimal_field_default()
-    hub_gear = decimal_field_default()
-    derailleur = decimal_field_default()
-    mtb = decimal_field_default()
-    road_bike = decimal_field_default()
-    cargo_bike = decimal_field_default()
-    hub_engine = decimal_field_default()
-    mid_engine = decimal_field_default()
-
-    class Meta:
-        abstract = True
-        ordering = ['name']
-
-    def __str__(self):
-        return self.name
-
-    def get_work_value_for_type(self, bike_type: str) -> Decimal:
-        return getattr(self, bike_type, Decimal('0.00'))
-
-
-class Service(AbstractService):
-    class Meta:
-        verbose_name = 'Service'
-        verbose_name_plural = 'Services'

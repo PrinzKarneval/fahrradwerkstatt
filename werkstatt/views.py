@@ -5,7 +5,7 @@ from django.shortcuts import render, redirect, get_object_or_404
 from django.views.generic import CreateView, ListView, DetailView, UpdateView, DeleteView
 from django.urls import reverse_lazy
 
-from lager.models import Article, SupplyOrder
+from lager.models import Article, SupplyOrder, STOCK_OUT, STOCK_IN
 from .forms import *
 from .mixins import BackLinkMixin, TitleMixin
 from .models import *
@@ -65,11 +65,11 @@ def dashboard(request):
         stock_qty=Sum(
             Case(
                 When(
-                    movements__movement_type=MovementType.IN,
+                    movements__movement_type__in=STOCK_IN,
                     then=F("movements__quantity"),
                 ),
                 When(
-                    movements__movement_type=MovementType.OUT,
+                    movements__movement_type__in=STOCK_OUT,
                     then=-F("movements__quantity"),
                 ),
                 default=0,
@@ -99,9 +99,9 @@ def dashboard(request):
         .annotate(
             total_qty=Sum(
                 Case(
-                    When(movements__movement_type=MovementType.IN,
+                    When(movements__movement_type__in=STOCK_IN,
                          then=F("movements__quantity")),
-                    When(movements__movement_type=MovementType.OUT,
+                    When(movements__movement_type__in=STOCK_OUT,
                          then=-F("movements__quantity")),
                     default=0,
                     output_field=IntegerField(),
@@ -254,16 +254,20 @@ class RepairOrderDelete(DeleteView):
         return reverse_lazy('customer_detail', args=[self.object.customer.pk])
 
 
-class RepairOrderServiceAdd(TitleMixin, BackLinkMixin, CreateView):
+class RepairOrderServiceAdd(TitleMixin, CreateView):
     model = RepairOrderService
     form_class = RepairOrderServiceForm
-    template_name = "form.html"
     title = "Service hinzufügen"
-    back_link = lambda self: reverse_lazy('repair_order_detail', args=[self.object.pk])
+
+    def get_context_data(self, *args, **kwargs):
+        context = super().get_context_data(*args, **kwargs)
+        context['title'] = 'Reparatur Service hinzufügen'
+        context['back_link'] = reverse('repair_order_detail', args=[self.kwargs.get('pk')])
+        return context
 
     def form_valid(self, form):
         order = get_object_or_404(RepairOrder, pk=self.kwargs["pk"])
-        service = order.repairorderservice_set.filter(service=form.instance.service).first()
+        service = order.services.filter(service=form.instance.service).first()
         if service:
             service.quantity += form.instance.quantity
             service.save(update_fields=["quantity"])

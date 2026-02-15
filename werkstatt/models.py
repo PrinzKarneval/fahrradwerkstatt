@@ -1,11 +1,14 @@
 from decimal import Decimal
+
+from django.core.exceptions import ValidationError
 from django.core.validators import MinValueValidator
 from django.db import models
 from django.urls import reverse
 from django.utils import timezone
 
-from lager.models import decimal_field_default, ArticleType, StockArticle, Service, Manufacturer, MovementType, \
-    ZERO_DECIMAL
+from lager.models import decimal_field_default, ArticleType, StockArticle, Manufacturer, MovementType, ZERO_DECIMAL, \
+    STOCK_IN
+from werkstatt.services import RepairOrderPricingService
 
 BIKE_TYPES = (
     ('children_bike', 'Children\'s bike'),
@@ -44,7 +47,7 @@ class RepairOrder(models.Model):
     date_created = models.DateTimeField(auto_now_add=True)
     date_finished = models.DateTimeField(blank=True, null=True)
     description = models.TextField(blank=True)
-    bike_type = models.CharField(max_length=50, blank=True, null=True)
+    bike_type = models.CharField(choices=BIKE_TYPES, max_length=20, default='derailleur')
     bike_model = models.CharField(max_length=50, blank=True, null=True)
     color = models.CharField(max_length=30, blank=True, null=True)
     serial_number = models.CharField(max_length=50, blank=True, null=True)
@@ -60,9 +63,14 @@ class RepairOrder(models.Model):
     def get_absolute_url(self):
         return reverse('repair_order_detail', kwargs={'pk': self.pk})
 
-    def get_total_article_price(self):
-        return sum((roa.stock_article.article.price or 0) * roa.quantity for roa in self.articles.all())
+    def get_total_articles_price(self):
+        return sum([roa.get_total() for roa in self.articles.all()])
 
+    def get_total_services_price(self):
+        return RepairOrderPricingService.get_total_services_price(self)
+
+    def get_total_price(self):
+        return round(self.get_total_articles_price() + self.get_total_services_price(), 2)
 
 
 class RepairOrderArticle(models.Model):
@@ -77,16 +85,76 @@ class RepairOrderArticle(models.Model):
     def __str__(self):
         return f'{self.stock_article} x {self.quantity}'
 
-    def get_unit_price(self) -> Decimal:
-        latest_in = self.stock_article.movements.filter(
-            movement_type=MovementType.IN
-        ).order_by('-id').first()
-        if latest_in:
-            return latest_in.price
-        return self.stock_article.price or ZERO_DECIMAL
-
     def get_total(self) -> Decimal:
         return self.stock_article.article.price * self.quantity
+
+    def get_reservations_quantity(self):
+        return self.reservations.aggregate(quantity=models.Sum('quantity'))['quantity']
+
+    def get_missing_reservation_quantity(self):
+        return self.quantity - self.get_reservations_quantity()
+
+    def all_reserved(self):
+        return self.get_reservations_quantity() >= self.quantity
+
+
+class AbstractService(models.Model):
+    MAIN_CATEGORIES = (
+        ('1', 'Auftragsannahme | Inspektion | Dienstleistung | Diverses'),
+        ('2', 'Rahmen'),
+        ('3', 'Räder | Bereifung'),
+        ('4', 'Tretlager | Pedale | Antrieb'),
+        ('5', 'Kettenschaltung | Nabenschaltung'),
+        ('6', 'Bremsen'),
+        ('7', 'Lichtanlage | Reflektoren'),
+        ('8', 'E-Bike Sonderarbeiten'),
+    )
+    SUB_CATEGORIES = (
+        ('1', 'Zubehörmontage'),
+        ('2', 'Lenker | Vorbau'),
+        ('3', 'Gabel | Lenkkopflager'),
+        ('4', 'Gabelfederung'),
+        ('5', 'Hinterbaufederung'),
+        ('6', 'Sattel | Sattelstütze'),
+        ('7', 'Gepäckträger | Rad- und Kettenschützer'),
+        ('8', 'Vorderradnabe'),
+        ('9', 'Hinterradnabe'),
+        ('10', 'Pedale'),
+        ('11', 'Kette'),
+        ('12', 'Riemen'),
+        ('13', 'Hydraulikbremse'),
+        ('14', 'Scheibenbremse'),
+        ('15', 'Software | Systemkontrolle | Fehler-Diagnose'),
+        ('16', 'Instandsetzung'),
+    )
+    main_category = models.CharField(choices=MAIN_CATEGORIES, max_length=100)
+    sub_category = models.CharField(choices=SUB_CATEGORIES, max_length=100, blank=True, null=True)
+    number = models.PositiveSmallIntegerField()
+    name = models.CharField(max_length=100)
+    children_bike = decimal_field_default()
+    hub_gear = decimal_field_default()
+    derailleur = decimal_field_default()
+    mtb = decimal_field_default()
+    road_bike = decimal_field_default()
+    cargo_bike = decimal_field_default()
+    hub_engine = decimal_field_default()
+    mid_engine = decimal_field_default()
+
+    class Meta:
+        abstract = True
+        ordering = ['name']
+
+    def __str__(self):
+        return self.name
+
+    def get_work_value_for_type(self, bike_type: str) -> Decimal:
+        return getattr(self, bike_type)
+
+
+class Service(AbstractService):
+    class Meta:
+        verbose_name = 'Service'
+        verbose_name_plural = 'Services'
 
 
 class RepairOrderService(models.Model):
@@ -149,7 +217,9 @@ class WorkRate(models.Model):
         current = WorkRate.objects.filter(
             start_date__lte=timezone.now(),
         ).order_by('-start_date').first()
-        return current.rate if current else Decimal('50.00')
+        if not current:
+            raise ValidationError('Arbeitswertsatz ist nicht gefunden.')
+        return current.rate
 
     def __str__(self):
         return f'{self.rate} €/h ab {self.start_date}'
@@ -179,6 +249,7 @@ class Invoice(models.Model):
 
 class InvoiceArticle(models.Model):
     invoice = models.ForeignKey(Invoice, on_delete=models.CASCADE, related_name='articles')
+    stock_article = models.ForeignKey(StockArticle, null=True, on_delete=models.SET_NULL)
     manufacturer = models.ForeignKey(Manufacturer, on_delete=models.PROTECT)
     type = models.ForeignKey(ArticleType, on_delete=models.PROTECT)
     name = models.CharField(max_length=100)

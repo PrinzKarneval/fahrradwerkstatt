@@ -2,7 +2,7 @@ from django.contrib import admin, messages
 from django.core.exceptions import ValidationError
 
 from lager.models import (
-    ArticleType, Article, Service, StockMovement, Vendor,
+    ArticleType, Article, StockMovement, Vendor,
     SupplyOrderArticle, SupplyOrder, Manufacturer,
     Delivery, DeliveryArticle, StockArticle
 )
@@ -41,16 +41,13 @@ class StockArticleAdmin(admin.ModelAdmin):
 
     def get_quantity(self, obj):
         return obj.get_quantity()
-
     get_quantity.short_description = "Gesamtbestand"
 
     def get_available_quantity(self, obj):
         return obj.get_available_quantity()
-
     get_available_quantity.short_description = "Verfügbar"
 
     def has_change_permission(self, request, obj=None):
-        # Prevent manual editing; stock changes should go via movements
         return False
 
     def has_delete_permission(self, request, obj=None):
@@ -102,11 +99,9 @@ class SupplyOrderAdmin(admin.ModelAdmin):
                 self.message_user(request, f"Bestellung #{order.pk} war nicht eingereicht.", level=messages.WARNING)
 
     def has_change_permission(self, request, obj=None):
-        # Cannot edit submitted orders
         return not (obj and obj.ordered)
 
     def has_delete_permission(self, request, obj=None):
-        # Cannot delete submitted orders
         return not (obj and obj.ordered)
 
 
@@ -114,7 +109,6 @@ class DeliveryArticleInline(admin.TabularInline):
     model = DeliveryArticle
     fields = ('article', 'quantity', 'price')
     extra = 1
-    readonly_fields = ('checked_in',)
 
 
 @admin.register(Delivery)
@@ -141,16 +135,8 @@ class DeliveryAdmin(admin.ModelAdmin):
                 )
 
     def has_change_permission(self, request, obj=None):
-        # Prevent editing checked-in deliveries
         return not (obj and obj.checked_in)
 
     def has_delete_permission(self, request, obj=None):
-        # Prevent deleting checked-in deliveries
         return not (obj and obj.checked_in)
 
-
-@admin.register(Service)
-class ServiceAdmin(admin.ModelAdmin):
-    list_display = ('name', 'main_category', 'sub_category', 'number')
-    list_filter = ('main_category', 'sub_category')
-    search_fields = ('name',)
