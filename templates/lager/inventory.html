@@ -77,7 +77,7 @@ document.addEventListener("DOMContentLoaded", function () {
 
             document.querySelectorAll("tr.article").forEach(articleRow => {
                 const articleId = articleRow.dataset.article;
-                const text = Array.from(articleRow.children).slice(0,4).map(td => td.textContent).join("");
+                const text = Array.from(articleRow.children).slice(0,5).map(td => td.textContent).join("");
                 const match = text.toLowerCase().includes(query);
 
                 articleRow.style.display = match ? "" : "none";
