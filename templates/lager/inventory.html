@@ -14,6 +14,7 @@
         <tr class="table-secondary">
             <th>#</th>
             <th>Typ</th>
+            <th>EAN</th>
             <th>Hersteller</th>
             <th>Artikel</th>
             <th>Preis</th>
@@ -29,8 +30,8 @@
         {% for a in articles %}
             <tr class="table-light article clickable-row" data-article="{{ a.pk }}" data-href="{{ a.get_absolute_url }}">
                 <td>{{ a.pk }}</td>
-                <td>{{ a.ean }}</td>
                 <td>{{ a.type }}</td>
+                <td>{{ a.ean }}</td>
                 <td>{{ a.manufacturer }}</td>
                 <td>{{ a.name }}</td>
                 <td>~ {{ a.get_avg_price }} €</td>
