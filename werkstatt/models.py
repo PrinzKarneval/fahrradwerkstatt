@@ -8,7 +8,7 @@ from lager.models import decimal_field_default, ArticleType, StockArticle, Servi
     ZERO_DECIMAL
 
 BIKE_TYPES = (
-    ('children_bike', "Children's bike"),
+    ('children_bike', 'Children\'s bike'),
     ('hub_gear', 'Hub Gear'),
     ('derailleur', 'Derailleur'),
     ('mtb', 'MTB'),
@@ -17,13 +17,13 @@ BIKE_TYPES = (
 
 
 class Customer(models.Model):
-    name = models.CharField(max_length=100)
-    email = models.EmailField(blank=True, null=True)
-    phone = models.CharField(max_length=25, blank=True, null=True)
-    postal = models.CharField(max_length=5)
-    city = models.CharField(max_length=50, default="Nürnberg")
-    street = models.CharField(max_length=100)
-    str_no = models.CharField(max_length=20)
+    name = models.CharField(max_length=100, verbose_name='Name')
+    email = models.EmailField(blank=True, null=True, verbose_name='Email')
+    phone = models.CharField(max_length=25, blank=True, null=True, verbose_name='Telefon')
+    postal = models.CharField(max_length=5, verbose_name='PLZ')
+    city = models.CharField(max_length=50, default='Nürnberg', verbose_name='Ort')
+    street = models.CharField(max_length=100, verbose_name='Straße')
+    str_no = models.CharField(max_length=20, verbose_name='Nr.')
 
     class Meta:
         verbose_name = 'Kunde'
@@ -33,14 +33,14 @@ class Customer(models.Model):
         return self.name
 
     def get_absolute_url(self):
-        return reverse("customer_detail", kwargs={"pk": self.pk})
+        return reverse('customer_detail', kwargs={'pk': self.pk})
 
     def get_open_repairs(self):
-        return self.repairorder_set.filter(date_finished__isnull=True).count()
+        return self.orders.filter(date_finished__isnull=True).count()
 
 
 class RepairOrder(models.Model):
-    customer = models.ForeignKey(Customer, on_delete=models.PROTECT)
+    customer = models.ForeignKey(Customer, on_delete=models.PROTECT, related_name='orders')
     date_created = models.DateTimeField(auto_now_add=True)
     date_finished = models.DateTimeField(blank=True, null=True)
     description = models.TextField(blank=True)
@@ -55,10 +55,10 @@ class RepairOrder(models.Model):
         ordering = ['-date_created']
 
     def __str__(self):
-        return f"RO #{self.pk} - {self.customer}"
+        return f'RO #{self.pk} - {self.customer}'
 
     def get_absolute_url(self):
-        return reverse("repair_order_detail", kwargs={"pk": self.pk})
+        return reverse('repair_order_detail', kwargs={'pk': self.pk})
 
     def get_total_article_price(self):
         return sum((roa.stock_article.article.price or 0) * roa.quantity for roa in self.articles.all())
@@ -75,7 +75,7 @@ class RepairOrderArticle(models.Model):
         verbose_name_plural = 'Artikel im Reparaturauftrag'
 
     def __str__(self):
-        return f"{self.stock_article} x {self.quantity}"
+        return f'{self.stock_article} x {self.quantity}'
 
     def get_unit_price(self) -> Decimal:
         latest_in = self.stock_article.movements.filter(
@@ -86,7 +86,7 @@ class RepairOrderArticle(models.Model):
         return self.stock_article.price or ZERO_DECIMAL
 
     def get_total(self) -> Decimal:
-        return (self.get_unit_price() * self.quantity).quantize(Decimal('0.01'))
+        return self.stock_article.article.price * self.quantity
 
 
 class RepairOrderService(models.Model):
@@ -99,7 +99,7 @@ class RepairOrderService(models.Model):
         verbose_name_plural = 'Services im Reparaturauftrag'
 
     def __str__(self):
-        return f"{self.service.name} x {self.quantity}"
+        return f'{self.service.name} x {self.quantity}'
 
     def get_work_value(self):
         return self.service.get_work_value_for_type(self.order.bike_type)
@@ -115,7 +115,7 @@ class StockArticleReservation(models.Model):
         verbose_name_plural = 'Reservierte Lagerartikel'
 
     def __str__(self):
-        return f"{self.stock_article} reserviert für {self.repair_order_article} ({self.quantity})"
+        return f'{self.stock_article} reserviert für {self.repair_order_article} ({self.quantity})'
 
 
 class StockArticleRequest(models.Model):
@@ -130,11 +130,11 @@ class StockArticleRequest(models.Model):
         ordering = ['created']
 
     def __str__(self):
-        return f"{self.stock_article} angefordert für {self.repair_order_article} ({self.quantity})"
+        return f'{self.stock_article} angefordert für {self.repair_order_article} ({self.quantity})'
 
 
 class WorkRate(models.Model):
-    rate = models.DecimalField(max_digits=10, decimal_places=2, default=Decimal("50.00"),
+    rate = models.DecimalField(max_digits=10, decimal_places=2, default=Decimal('50.00'),
                                validators=[MinValueValidator(0)])
     start_date = models.DateField(default=timezone.now)
     end_date = models.DateField(blank=True, null=True)
@@ -149,10 +149,10 @@ class WorkRate(models.Model):
         current = WorkRate.objects.filter(
             start_date__lte=timezone.now(),
         ).order_by('-start_date').first()
-        return current.rate if current else Decimal("50.00")
+        return current.rate if current else Decimal('50.00')
 
     def __str__(self):
-        return f"{self.rate} €/h ab {self.start_date}"
+        return f'{self.rate} €/h ab {self.start_date}'
 
 
 class Invoice(models.Model):
@@ -174,7 +174,7 @@ class Invoice(models.Model):
         verbose_name_plural = 'Rechnungen'
 
     def __str__(self):
-        return f"Rechnung #{self.pk} - {self.customer}"
+        return f'Rechnung #{self.pk} - {self.customer}'
 
 
 class InvoiceArticle(models.Model):
@@ -184,7 +184,7 @@ class InvoiceArticle(models.Model):
     name = models.CharField(max_length=100)
     description = models.TextField(blank=True)
     ean = models.CharField(max_length=13, blank=True, null=True)
-    price = models.DecimalField(max_digits=10, decimal_places=2, default=Decimal("0.00"),
+    price = models.DecimalField(max_digits=10, decimal_places=2, default=Decimal('0.00'),
                                 validators=[MinValueValidator(0)])
     quantity = models.PositiveIntegerField(default=1, validators=[MinValueValidator(1)])
 

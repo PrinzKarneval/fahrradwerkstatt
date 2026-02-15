@@ -1,0 +1,171 @@
+{% extends 'base.html' %}
+{% block content %}
+
+    <!-- Header -->
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <h1 class="h3 mb-0">📊 DIE Fahrradwerkstatt Erlangen</h1>
+    </div>
+
+    <!-- KPI CARDS -->
+    <div class="row g-3 mb-4">
+
+        <div class="col-12 col-md-6 col-xl-3">
+            <div class="card shadow-sm border-0 h-100">
+                <div class="card-body">
+                    <small class="text-muted">Offene Aufträge</small>
+                    <h2 class="mt-2 mb-0">{{ orders_open }}</h2>
+                </div>
+            </div>
+        </div>
+
+        <div class="col-12 col-md-6 col-xl-3">
+            <div class="card shadow-sm border-0 h-100">
+                <div class="card-body">
+                    <small class="text-muted">Geschlossene Aufträge</small>
+                    <h2 class="mt-2 mb-0">{{ orders_closed }}</h2>
+                </div>
+            </div>
+        </div>
+
+        <!-- Wert offene Aufträge -->
+        <div class="col-12 col-md-6 col-xl-3">
+            <div class="card shadow-sm border-0 h-100">
+                <div class="card-body">
+                    <small class="text-muted">Wert offene Aufträge</small>
+                    <h4 class="mt-2 mb-0">
+                        {{ open_orders_value|floatformat:2 }} €
+                    </h4>
+                </div>
+            </div>
+        </div>
+
+        <!-- Rechnungswert -->
+        <div class="col-12 col-md-6 col-xl-3">
+            <div class="card shadow-sm border-0 h-100">
+                <div class="card-body">
+                    <small class="text-muted">Rechnungswert gesamt</small>
+                    <h4 class="mt-2 mb-0">
+                        {{ invoices_total_value|floatformat:2 }} €
+                    </h4>
+                </div>
+            </div>
+        </div>
+
+    </div>
+
+    <!-- zweite Reihe -->
+    <div class="row g-3 mb-4">
+
+        <div class="col-12 col-md-6 col-xl-3">
+            <div class="card shadow-sm border-0 h-100">
+                <div class="card-body">
+                    <small class="text-muted">Lagerwert EK</small>
+                    <h3 class="mt-2 mb-0">
+                        {{ stock_value_buying|floatformat:2 }} €
+                    </h3>
+                </div>
+            </div>
+        </div>
+
+        <div class="col-12 col-md-6 col-xl-3">
+            <div class="card shadow-sm border-0 h-100">
+                <div class="card-body">
+                    <small class="text-muted">Lagerwert VK</small>
+                    <h3 class="mt-2 mb-0">
+                        {{ stock_value_selling|floatformat:2 }} €
+                    </h3>
+                </div>
+            </div>
+        </div>
+        <div class="col-12 col-md-2">
+            <div class="card shadow-sm border-0 h-100">
+                <div class="card-body">
+                    <small class="text-muted">Letzte Bestellung</small>
+                    <div class="mt-2 mb-0">
+                        <h3>{{ last_order }}</h3>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="col-12 col-md-2">
+            <div class="card shadow-sm border-0 h-100">
+                <div class="card-body">
+                    <small class="text-muted">Bestellwert</small>
+                    <div class="mt-2 mb-0">
+                        <h3>{{ last_order.get_total_value }} €</h3>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="col-12 col-md-2">
+            <div class="card shadow-sm border-0 h-100">
+                <div class="card-body">
+                    <small class="text-muted">Bestellte Artikel</small>
+                    <div class="mt-2 mb-0">
+                        <h3>{{ last_order.get_article_count }}</h3>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+    </div>
+
+    {{ top_services }}
+
+    <div class="card shadow-sm border-0">
+        <div class="card-body">
+
+            <h5 class="mb-3">Artikelbestand nach Artikel</h5>
+
+            <!-- FIXED HEIGHT CONTAINER -->
+            <div style="height: 400px; position: relative;">
+                <canvas id="stockChart"></canvas>
+            </div>
+
+        </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script>
+        const labels = [
+            {% for item in stock_by_article %}
+                "{{ item.article__name|escapejs }}",
+            {% endfor %}
+        ];
+
+        const values = [
+            {% for item in stock_by_article %}
+                {{ item.total_qty|default:0 }},
+            {% endfor %}
+        ];
+
+        const ctx = document.getElementById('stockChart');
+
+        new Chart(ctx, {
+            type: 'bar',
+            data: {
+                labels: labels,
+                datasets: [{
+                    label: 'Bestand',
+                    data: values,
+                    borderWidth: 1
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: {
+                    legend: {
+                        display: false
+                    }
+                },
+                scales: {
+                    y: {
+                        beginAtZero: true
+                    }
+                }
+            }
+        });
+    </script>
+
+{% endblock content %}

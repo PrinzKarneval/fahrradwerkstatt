@@ -1,20 +1,142 @@
 from django.contrib import messages
-from django.db.models import Exists, OuterRef
+from django.db.models import Exists, OuterRef, DecimalField, ExpressionWrapper, Sum, F, Case, When, IntegerField
 from django.http import *
 from django.shortcuts import render, redirect, get_object_or_404
 from django.views.generic import CreateView, ListView, DetailView, UpdateView, DeleteView
 from django.urls import reverse_lazy
 
-from lager.models import Article, StockArticle
+from lager.models import Article, StockArticle, SupplyOrder
 from .forms import *
 from .mixins import BackLinkMixin, TitleMixin
 from .models import *
 from .services import RepairOrderHandler
 
+
+def dashboard(request):
+    # --------------------------------------------------
+    # AUFTRÄGE
+    # --------------------------------------------------
+    orders_open = RepairOrder.objects.filter(
+        date_finished__isnull=True
+    ).count()
+
+    orders_closed = RepairOrder.objects.filter(
+        date_finished__isnull=False
+    ).count()
+
+    # Wert offene Aufträge
+    open_orders_value = Decimal("0.00")
+    open_orders = RepairOrder.objects.filter(
+        date_finished__isnull=True
+    ).prefetch_related("articles__stock_article__article")
+
+    for order in open_orders:
+        open_orders_value += order.get_total_article_price()
+
+    # --------------------------------------------------
+    # RECHNUNGEN
+    # --------------------------------------------------
+    invoice_articles_total = InvoiceArticle.objects.aggregate(
+        total=Sum(
+            ExpressionWrapper(
+                F("price") * F("quantity"),
+                output_field=DecimalField(max_digits=12, decimal_places=2),
+            )
+        )
+    )["total"] or Decimal("0.00")
+
+    invoice_services_total = InvoiceService.objects.aggregate(
+        total=Sum(
+            ExpressionWrapper(
+                F("price") * F("quantity"),
+                output_field=DecimalField(max_digits=12, decimal_places=2),
+            )
+        )
+    )["total"] or Decimal("0.00")
+
+    invoices_total_value = invoice_articles_total + invoice_services_total
+
+    # --------------------------------------------------
+    # LAGERBESTAND (korrekt über Movements)
+    # --------------------------------------------------
+
+    # Bestand pro StockArticle berechnen
+    stock_articles = StockArticle.objects.annotate(
+        stock_qty=Sum(
+            Case(
+                When(
+                    movements__movement_type=MovementType.IN,
+                    then=F("movements__quantity"),
+                ),
+                When(
+                    movements__movement_type=MovementType.OUT,
+                    then=-F("movements__quantity"),
+                ),
+                default=0,
+                output_field=IntegerField(),
+            )
+        )
+    )
+
+    # Lagerwert berechnen
+    stock_value_buying = Decimal("0.00")
+    for sa in stock_articles:
+        qty = sa.stock_qty or 0
+        stock_value_buying += (sa.price or Decimal("0.00")) * qty
+
+    stock_value_selling = Decimal("0.00")
+    for sa in stock_articles:
+        qty = sa.stock_qty or 0
+        stock_value_selling += (sa.article.price or Decimal("0.00")) * qty
+
+    # --------------------------------------------------
+    # ARTIKELBESTAND NACH ARTIKEL (WICHTIG: neu!)
+    # --------------------------------------------------
+
+    stock_by_article = (
+        StockArticle.objects
+        .values("article__name")
+        .annotate(
+            total_qty=Sum(
+                Case(
+                    When(movements__movement_type=MovementType.IN,
+                         then=F("movements__quantity")),
+                    When(movements__movement_type=MovementType.OUT,
+                         then=-F("movements__quantity")),
+                    default=0,
+                    output_field=IntegerField(),
+                )
+            )
+        )
+        .order_by("-total_qty")[:10]
+    )
+    last_order = SupplyOrder.objects.last()
+
+    # --------------------------------------------------
+    # CONTEXT
+    # --------------------------------------------------
+    context = {
+        "orders_open": orders_open,
+        "orders_closed": orders_closed,
+        "open_orders_value": open_orders_value,
+        "invoices_total_value": invoices_total_value,
+        "stock_value_buying": stock_value_buying,
+        "stock_value_selling": stock_value_selling,
+        "stock_by_article": stock_by_article,
+        "last_order": last_order,
+    }
+
+    return render(request, "dashboard.html", context)
+
+
 class CustomerList(ListView):
     model = Customer
     context_object_name = 'customers'
 
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        context["open_orders"] = RepairOrder.objects.filter(date_finished__isnull=True).count()
+        return context
 
 class CustomerDetail(DetailView):
     model = Customer
@@ -30,11 +152,11 @@ class CustomerDetail(DetailView):
 class CustomerCreate(CreateView):
     model = Customer
     form_class = CustomerCreateForm
-    template_name = 'werkstatt/form.html'
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
-        context['back_link'] = reverse('customer_list')
+        context["title"] = "Kunde anlegen"
+        context["back_link"] = reverse("customer_list")
         return context
 
     def get_success_url(self):
@@ -44,7 +166,6 @@ class CustomerCreate(CreateView):
 class CustomerUpdate(UpdateView):
     model = Customer
     form_class = CustomerUpdateForm
-    template_name = 'werkstatt/form.html'
 
     def get_context_data(self, *, object_list=None, **kwargs):
         context = super().get_context_data(**kwargs)
@@ -115,7 +236,7 @@ class RepairOrderUpdate(TitleMixin, BackLinkMixin, UpdateView):
     form_class = RepairOrderForm
     template_name = 'form.html'
     title = "Auftrag bearbeiten"
-    back_link = lambda self: reverse_lazy('repair_order_detail', args=[self.object.pk])
+    back_link = lambda self: reverse('repair_order_detail', args=[self.object.pk])
 
 
 class RepairOrderDelete(DeleteView):
@@ -175,6 +296,7 @@ def repair_order_article_plus_one(request, roa_pk):
     RepairOrderHandler.update_quantity(roa.order, roa.stock_article, roa.quantity + 1)
     return HttpResponseRedirect(reverse_lazy('repair_order_detail', args=[roa.order.pk]))
 
+
 def repair_order_article_minus_one(request, roa_pk):
     roa = get_object_or_404(RepairOrderArticle, pk=roa_pk)
     RepairOrderHandler.update_quantity(roa.order, roa.stock_article, roa.quantity - 1)
@@ -200,11 +322,12 @@ class RepairOrderArticleAdd(CreateView):
             defaults={'quantity': 0}
         )
         sa = form.cleaned_data['stock_article']
-        RepairOrderHandler.update_quantity(ro, sa , roa.quantity + form.instance.quantity)
+        RepairOrderHandler.update_quantity(ro, sa, roa.quantity + form.instance.quantity)
         return HttpResponseRedirect(reverse('repair_order_detail', args=[self.kwargs.get('pk')]))
 
     def get_success_url(self):
         return reverse('repair_order_detail', args=[self.kwargs['pk']])
+
 
 class RepairOrderArticleUpdate(UpdateView):
     model = RepairOrderArticle

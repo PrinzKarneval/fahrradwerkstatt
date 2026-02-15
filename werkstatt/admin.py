@@ -6,6 +6,7 @@ from werkstatt.models import *
 
 admin.site.register(Customer)
 
+
 @admin.register(StockArticleReservation)
 class StockArticleReservationAdmin(admin.ModelAdmin):
     list_display = ('stock_article', 'repair_order_article', 'quantity')
@@ -18,11 +19,10 @@ class StockArticleRequestAdmin(admin.ModelAdmin):
     search_fields = ('stock_article__article__name', 'repair_order_article__id')
     list_filter = ('created',)
 
+
 class RepairOrderArticleInline(admin.TabularInline):
     model = RepairOrderArticle
     extra = 0
-
-    readonly_fields = ('stock_article',)
 
     def save_model(self, request, obj, form, change):
         """
@@ -34,7 +34,6 @@ class RepairOrderArticleInline(admin.TabularInline):
 class RepairOrderServiceInline(admin.TabularInline):
     model = RepairOrderService
     extra = 0
-
 
 
 @admin.register(RepairOrder)
@@ -60,13 +59,17 @@ class RepairOrderAdmin(admin.ModelAdmin):
             elif needed_qty < reserved_qty:
                 delta = reserved_qty - needed_qty
                 StockService.release_reserved(stock_article=sa, quantity=delta, reference=f"RO #{order.pk}")
+
+
 class InvoiceArticleInline(admin.TabularInline):
     model = InvoiceArticle
     extra = 0
 
+
 class InvoiceServiceInline(admin.TabularInline):
     model = InvoiceService
     extra = 0
+
 
 @admin.register(Invoice)
 class InvoiceAdmin(admin.ModelAdmin):

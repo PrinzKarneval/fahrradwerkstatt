@@ -7,8 +7,8 @@ from django.db.models.functions import Coalesce
 from django.urls import reverse
 from django.utils import timezone
 
-
 ZERO_DECIMAL = Decimal('0.00')
+
 
 def decimal_field_default():
     return models.DecimalField(
@@ -59,7 +59,7 @@ class Vendor(models.Model):
 
 class ArticleType(models.Model):
     parent = models.ForeignKey('self', null=True, blank=True, on_delete=models.PROTECT, related_name='children',
-        verbose_name='Übergeordneter Typ')
+                               verbose_name='Übergeordneter Typ')
     name = models.CharField(max_length=100)
 
     class Meta:
@@ -101,7 +101,7 @@ class Article(AbstractArticle):
         return self.name
 
     def get_stock_quantity(self) -> int:
-        """Sum of all IN movements minus OUT/USED."""
+        '''Sum of all IN movements minus OUT/USED.'''
         agg = StockMovement.objects.filter(
             stock_article__article=self
         ).aggregate(
@@ -136,13 +136,14 @@ class Article(AbstractArticle):
         return self.get_available_quantity() + self.get_ordered_quantity()
 
     def get_avg_price(self) -> Decimal:
-        """Weighted average from IN movements only (deliveries)."""
+        '''Weighted average from IN movements only (deliveries).'''
         agg = StockMovement.objects.filter(
             stock_article__article=self,
             movement_type=MovementType.IN
         ).aggregate(
             total_value=Coalesce(
-                Sum(ExpressionWrapper(F('price') * F('quantity'), output_field=DecimalField(max_digits=12, decimal_places=2))),
+                Sum(ExpressionWrapper(F('price') * F('quantity'),
+                                      output_field=DecimalField(max_digits=12, decimal_places=2))),
                 ZERO_DECIMAL
             ),
             total_qty=Coalesce(Sum('quantity'), 0)
@@ -153,7 +154,8 @@ class Article(AbstractArticle):
 
 
 class StockArticle(models.Model):
-    article = models.ForeignKey(Article, on_delete=models.PROTECT, related_name='stock_articles', verbose_name='Lagerartikel')
+    article = models.ForeignKey(Article, on_delete=models.PROTECT, related_name='stock_articles',
+                                verbose_name='Lagerartikel')
     price = models.DecimalField(max_digits=7, decimal_places=2, validators=[MinValueValidator(0)])
 
     class Meta:
@@ -186,7 +188,7 @@ class StockArticle(models.Model):
         return (
             StockArticleRequest.objects
             .filter(stock_article=self)
-            .aggregate(total=Coalesce(Sum("quantity"), 0))["total"]
+            .aggregate(total=Coalesce(Sum('quantity'), 0))['total']
         )
 
     def get_ordered_quantity(self):
@@ -195,17 +197,18 @@ class StockArticle(models.Model):
             price=self.price,
             order__ordered__isnull=False,
             order__deliveries__isnull=True,
-        ).aggregate(total=Coalesce(Sum("quantity"), 0))["total"]
+        ).aggregate(total=Coalesce(Sum('quantity'), 0))['total']
 
     def get_future_quantity(self) -> int:
-        """
+        '''
         Future quantity = available stock - reservations - requests + supply orders not yet delivered
-        """
+        '''
         stock = self.get_quantity()
         reserved = self.get_reserved_quantity()
         requested = self.get_requested_quantity()
         ordered = self.get_ordered_quantity()
         return max(0, stock - reserved - requested + ordered)
+
 
 class StockMovement(models.Model):
     stock_article = models.ForeignKey(StockArticle, on_delete=models.PROTECT, related_name='movements')
@@ -251,7 +254,8 @@ class SupplyOrder(models.Model):
 
 
 class SupplyOrderArticle(models.Model):
-    order = models.ForeignKey(SupplyOrder, on_delete=models.CASCADE, related_name='positions', verbose_name='Bestellung')
+    order = models.ForeignKey(SupplyOrder, on_delete=models.CASCADE, related_name='positions',
+                              verbose_name='Bestellung')
     article = models.ForeignKey(Article, on_delete=models.PROTECT, verbose_name='Artikel')
     quantity = models.PositiveIntegerField(verbose_name='Menge')
     price = models.DecimalField(max_digits=7, decimal_places=2, verbose_name='Preis [EK]')
@@ -279,7 +283,7 @@ class Delivery(models.Model):
         return f'{self.delivery_number} {self.vendor}'
 
     def get_absolute_url(self):
-        return reverse("delivery_detail", kwargs={"pk": self.pk})
+        return reverse('delivery_detail', kwargs={'pk': self.pk})
 
     def get_article_count(self):
         return self.articles.aggregate(total=Sum('quantity'))['total'] or 0
@@ -290,7 +294,8 @@ class Delivery(models.Model):
 
 class DeliveryArticle(models.Model):
     delivery = models.ForeignKey(Delivery, on_delete=models.PROTECT, related_name='articles', verbose_name='Lieferung')
-    article = models.ForeignKey(Article, on_delete=models.PROTECT, related_name='deliveries', verbose_name='Lieferartikel')
+    article = models.ForeignKey(Article, on_delete=models.PROTECT, related_name='deliveries',
+                                verbose_name='Lieferartikel')
     quantity = models.PositiveIntegerField(verbose_name='Menge')
     price = models.DecimalField(max_digits=7, decimal_places=2, verbose_name='Preis [EK]')
     checked_in = models.DateTimeField(blank=True, null=True, verbose_name='Eingelagert')
@@ -368,4 +373,3 @@ class Service(AbstractService):
     class Meta:
         verbose_name = 'Service'
         verbose_name_plural = 'Services'
-

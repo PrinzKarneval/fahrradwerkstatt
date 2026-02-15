@@ -60,14 +60,14 @@
                 <a class="btn btn-sm btn-primary" href="{% url 'repair_order_service_add' object.pk %}">Service
                     hinzufügen</a>
             </th>
-            <th class="border-0" colspan="3">Preis Arbeiten</th>
-            {% else %}
             <th class="border-0" colspan="4">Preis Arbeiten</th>
+            {% else %}
+            <th class="border-0" colspan="5">Preis Arbeiten</th>
             {% endif %}
             <th class="border-0">{{object.get_total_service_price}} €</th>
         </tr>
         <tr class="text-end">
-            <th colspan="5" class="text-start">Teile</th>
+            <th colspan="7" class="text-start">Teile</th>
         </tr>
         {% for roa in object.articles.all %}
         <tr class="text-end">
