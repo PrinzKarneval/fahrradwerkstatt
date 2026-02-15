@@ -1,109 +1,114 @@
 {% extends "base.html" %}
 {% block content %}
-    <style>
-        .clickable-row {
-            cursor: pointer;
-        }</style>
+<style>
+    .clickable-row {
+        cursor: pointer;
+    }</style>
+<h1>Kunden</h1>
+<div class="d-flex my-3">
     {% if not customers %}
         <div>
             <a id="btn-first-customer" class="btn btn-primary" href="{% url 'customer_create' %}">Kunde anlegen</a>
         </div>
     {% else %}
-        <h1>Kunden</h1>
-        <div class="d-flex my-3">
-            <div class="me-3">
-                <a id="btn-add-customer" class="btn btn-primary" href="{% url 'customer_create' %}">Kunde anlegen</a>
-            </div>
-            <div class="flex-grow-1">
-                <input type="search" autofocus="autofocus" id="search" class="form-control"
-                       placeholder="Kunden suchen...">
-            </div>
+        <div class="me-3">
+            <a id="btn-add-customer" class="btn btn-primary" href="{% url 'customer_create' %}">Kunde anlegen</a>
         </div>
-        <table class="table table-hover">
-            <thead>
-            <tr>
-                <th>#</th>
-                <th>Name</th>
-                <th>Email</th>
-                <th>Telefon</th>
-                <th>Offene Aufträge</th>
-            </tr>
-            </thead>
-            <tbody>
-            {% for c in customers %}
-                <tr class="clickable-row" data-href="{{ c.get_absolute_url }}">
-                    <td>{{ c.pk }}</td>
-                    <td>{{ c }}</td>
-                    <td>{{ c.email }}</td>
-                    <td>{{ c.phone }}</td>
-                    <td>{{ c.get_open_repairs }}</td>
-                </tr>
-            {% endfor %}
-            </tbody>
-        </table>
+        <div class="flex-grow-1">
+            <input type="search" autofocus="autofocus" id="search" class="form-control"
+                   placeholder="Kunden suchen...">
+        </div>
     {% endif %}
-    <script>
-        document.addEventListener("DOMContentLoaded", () => {
-            try {
-                let btnFirstCustomer = document.querySelector("#btn-first-customer");
-                btnFirstCustomer.addEventListener("mouseenter", () => {
-                    btnFirstCustomer.textContent = "GEIL BABY UNSER ERSTER KUNDE, DER LADEN LÄUFT!!!!! KLICK MICH!!!";
-                });
-            } catch (error) {
-            }
-
-            let btnAddCustomer = document.querySelector("#btn-add-customer");
-            btnAddCustomer.addEventListener("mouseenter", () => {
-                const items = [
-                    "Noch einen Fanclub-Mitgliedsschein ausstellen",
-                    "Eine weitere Legende in unsere Kartei aufnehmen",
-                    "Klick hier, um unseren Ruhm zu steigern",
-                    "Neuen VIP in unser Imperium holen",
-                    "Kundschaft? Nein – Bewunderer hinzufügen",
-                    "Noch jemanden mit Geschmack registrieren",
-                    "Business-Evolution starten (Level +1)",
-                    "Exklusiven Zugang zu unserer Großartigkeit vergeben",
-                    "Eine neue Erfolgsgeschichte erzeugen",
-                    "Mehr Menschen, die uns feiern",
-                    "Kundenliste auf Luxusmodus erweitern",
-                    "Noch einen zukünftigen Stammkunden retten",
-                    "Ein weiteres Genie erkennt unseren Wert",
-                    "Neues Opfer unserer Kompetenz hinzufügen",
-                    "Bitte Applaus: Neuer Kunde kommt rein",
-                    "Unser Imperium wächst weiter",
-                    "Noch ein Name für die Hall of Fame",
-                    "Einen weiteren Menschen beeindrucken",
-                    "Luxus-Client erzeugen",
-                    "Mehr Umsatz, mehr Glamour, mehr wir"
-                ];
-                btnAddCustomer.textContent = items[Math.floor(Math.random() * items.length)];
+</div>
+<table class="table table-hover">
+    <thead>
+    <tr>
+        <th>#</th>
+        <th>Name</th>
+        <th>Email</th>
+        <th>Telefon</th>
+        <th>Offene Aufträge</th>
+    </tr>
+    </thead>
+    <tbody>
+    {% for c in customers %}
+        <tr class="clickable-row" data-href="{{ c.get_absolute_url }}">
+            <td>{{ c.pk }}</td>
+            <td>{{ c }}</td>
+            <td>{{ c.email }}</td>
+            <td>{{ c.phone }}</td>
+            <td>{{ c.get_open_repairs }}</td>
+        </tr>
+    {% empty %}
+        <tr>
+            <td colspan="5">Noch keine Kunden vorhanden.</td>
+        </tr>
+    {% endfor %}
+    </tbody>
+</table>
+{% endif %}
+<script>
+    document.addEventListener("DOMContentLoaded", () => {
+        try {
+            let btnFirstCustomer = document.querySelector("#btn-first-customer");
+            btnFirstCustomer.addEventListener("mouseenter", () => {
+                btnFirstCustomer.textContent = "GEIL BABY UNSER ERSTER KUNDE, DER LADEN LÄUFT!!!!! KLICK MICH!!!";
             });
-            btnAddCustomer.addEventListener("mouseleave", () => {
-                btnAddCustomer.textContent = "Kunden anlegen"
-            });
-        });
-
-        const searchInput = document.querySelector('#search');
-        if (searchInput) {
-            searchInput.addEventListener("input", () => {
-                const query = searchInput.value.toLowerCase();
-                const rows = document.querySelectorAll('tbody tr');
-
-                rows.forEach((row) => {
-                    const cells = row.children;
-                    const text = cells[1].textContent + cells[2].textContent;
-                    const match = text.toLowerCase().includes(query);
-                    row.style.display = match ? "" : "none";
-                });
-            });
+        } catch (error) {
         }
-        document.addEventListener("DOMContentLoaded", function () {
-            document.querySelectorAll(".clickable-row").forEach(function (row) {
-                row.addEventListener("click", function () {
-                    window.location.href = this.dataset.href;
-                });
+
+        let btnAddCustomer = document.querySelector("#btn-add-customer");
+        btnAddCustomer.addEventListener("mouseenter", () => {
+            const items = [
+                "Noch einen Fanclub-Mitgliedsschein ausstellen",
+                "Eine weitere Legende in unsere Kartei aufnehmen",
+                "Klick hier, um unseren Ruhm zu steigern",
+                "Neuen VIP in unser Imperium holen",
+                "Kundschaft? Nein – Bewunderer hinzufügen",
+                "Noch jemanden mit Geschmack registrieren",
+                "Business-Evolution starten (Level +1)",
+                "Exklusiven Zugang zu unserer Großartigkeit vergeben",
+                "Eine neue Erfolgsgeschichte erzeugen",
+                "Mehr Menschen, die uns feiern",
+                "Kundenliste auf Luxusmodus erweitern",
+                "Noch einen zukünftigen Stammkunden retten",
+                "Ein weiteres Genie erkennt unseren Wert",
+                "Neues Opfer unserer Kompetenz hinzufügen",
+                "Bitte Applaus: Neuer Kunde kommt rein",
+                "Unser Imperium wächst weiter",
+                "Noch ein Name für die Hall of Fame",
+                "Einen weiteren Menschen beeindrucken",
+                "Luxus-Client erzeugen",
+                "Mehr Umsatz, mehr Glamour, mehr wir"
+            ];
+            btnAddCustomer.textContent = items[Math.floor(Math.random() * items.length)];
+        });
+        btnAddCustomer.addEventListener("mouseleave", () => {
+            btnAddCustomer.textContent = "Kunden anlegen"
+        });
+    });
+
+    const searchInput = document.querySelector('#search');
+    if (searchInput) {
+        searchInput.addEventListener("input", () => {
+            const query = searchInput.value.toLowerCase();
+            const rows = document.querySelectorAll('tbody tr');
+
+            rows.forEach((row) => {
+                const cells = row.children;
+                const text = cells[1].textContent + cells[2].textContent;
+                const match = text.toLowerCase().includes(query);
+                row.style.display = match ? "" : "none";
             });
         });
-    </script>
+    }
+    document.addEventListener("DOMContentLoaded", function () {
+        document.querySelectorAll(".clickable-row").forEach(function (row) {
+            row.addEventListener("click", function () {
+                window.location.href = this.dataset.href;
+            });
+        });
+    });
+</script>
 
 {% endblock content %}
