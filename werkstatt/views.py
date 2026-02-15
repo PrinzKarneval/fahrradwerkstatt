@@ -5,7 +5,7 @@ from django.shortcuts import render, redirect, get_object_or_404
 from django.views.generic import CreateView, ListView, DetailView, UpdateView, DeleteView
 from django.urls import reverse_lazy
 
-from lager.models import Article, StockArticle, SupplyOrder
+from lager.models import Article, SupplyOrder
 from .forms import *
 from .mixins import BackLinkMixin, TitleMixin
 from .models import *
@@ -129,6 +129,12 @@ def dashboard(request):
     return render(request, "dashboard.html", context)
 
 
+class SelfServiceCustomerCreate(CreateView):
+    model = Customer
+    form_class = CustomerCreateForm
+    template_name = 'werkstatt/selfservice_kunde_erstellen.html'
+
+
 class CustomerList(ListView):
     model = Customer
     context_object_name = 'customers'
@@ -137,6 +143,7 @@ class CustomerList(ListView):
         context = super().get_context_data(**kwargs)
         context["open_orders"] = RepairOrder.objects.filter(date_finished__isnull=True).count()
         return context
+
 
 class CustomerDetail(DetailView):
     model = Customer

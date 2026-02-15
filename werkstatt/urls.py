@@ -9,7 +9,7 @@ urlpatterns = [
     path('kunden/<int:pk>', CustomerDetail.as_view(), name='customer_detail'),
     path('kunden/create', CustomerCreate.as_view(), name='customer_create'),
     path('kunden/<int:pk>/update', CustomerUpdate.as_view(), name='customer_update'),
-
+    path('selfservice/kunde-erstellen', SelfServiceCustomerCreate.as_view(), name='selfservice_create'),
     # RepairOrder
     path('auftraege/', RepairOrderList.as_view(), name='repair_order_list'),
     path('auftraege/create/<int:pk>', RepairOrderCreate.as_view(), name='repair_order_create'),

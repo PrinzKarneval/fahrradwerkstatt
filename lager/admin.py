@@ -33,6 +33,7 @@ class ArticleAdmin(admin.ModelAdmin):
     list_filter = ('type', 'manufacturer')
     search_fields = ('name',)
 
+
 @admin.register(StockArticle)
 class StockArticleAdmin(admin.ModelAdmin):
     list_display = ('article', 'price', 'get_quantity', 'get_available_quantity')
@@ -40,10 +41,12 @@ class StockArticleAdmin(admin.ModelAdmin):
 
     def get_quantity(self, obj):
         return obj.get_quantity()
+
     get_quantity.short_description = "Gesamtbestand"
 
     def get_available_quantity(self, obj):
         return obj.get_available_quantity()
+
     get_available_quantity.short_description = "Verfügbar"
 
     def has_change_permission(self, request, obj=None):
@@ -64,6 +67,7 @@ class StockMovementAdmin(admin.ModelAdmin):
 
     def has_delete_permission(self, request, obj=None):
         return False
+
 
 class SupplyOrderArticleInline(admin.TabularInline):
     model = SupplyOrderArticle
@@ -143,6 +147,7 @@ class DeliveryAdmin(admin.ModelAdmin):
     def has_delete_permission(self, request, obj=None):
         # Prevent deleting checked-in deliveries
         return not (obj and obj.checked_in)
+
 
 @admin.register(Service)
 class ServiceAdmin(admin.ModelAdmin):
