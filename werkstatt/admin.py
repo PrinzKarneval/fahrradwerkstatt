@@ -1,15 +1,12 @@
 from django.contrib import admin, messages
 from django.db import transaction
 
-from werkstatt.models import (
-    Customer, RepairOrder, RepairOrderArticle, RepairOrderService,
-    Invoice, InvoiceArticle, InvoiceService,
-    WorkRate, StockArticleReservation, StockArticleRequest, Service
-)
+from werkstatt.models import *
 from werkstatt.services import RepairOrderHandler, InvoiceCreationService
 
-admin.site.register(Customer)
 
+admin.site.register(Customer)
+admin.site.register(ServiceCategory)
 
 @admin.register(StockArticleReservation)
 class StockArticleReservationAdmin(admin.ModelAdmin):
@@ -47,8 +44,8 @@ class RepairOrderServiceInline(admin.TabularInline):
 
 @admin.register(RepairOrder)
 class RepairOrderAdmin(admin.ModelAdmin):
-    list_display = ('id', 'customer', 'date_created', 'date_finished', 'bike_type')
-    list_filter = ('bike_type', 'date_created', 'date_finished')
+    list_display = ('id', 'customer', 'date_created', 'date_finished', 'is_ebike')
+    list_filter = ('is_ebike', 'date_created', 'date_finished')
     search_fields = ('customer__name', 'bike_model', 'serial_number')
     inlines = [RepairOrderArticleInline, RepairOrderServiceInline]
 
@@ -85,8 +82,8 @@ class InvoiceAdmin(admin.ModelAdmin):
 
 @admin.register(Service)
 class ServiceAdmin(admin.ModelAdmin):
-    list_display = ('name', 'main_category', 'sub_category', 'number')
-    list_filter = ('main_category', 'sub_category')
+    list_display = ('name', 'category', 'number', 'normal_price', 'ebike_price')
+    list_filter = ('category',)
     search_fields = ('name',)
 
 @admin.register(WorkRate)

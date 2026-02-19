@@ -36,12 +36,8 @@ class ArticleAdmin(admin.ModelAdmin):
 
 @admin.register(StockArticle)
 class StockArticleAdmin(admin.ModelAdmin):
-    list_display = ('article', 'price', 'get_quantity', 'get_available_quantity')
-    readonly_fields = ('get_quantity', 'get_available_quantity')
-
-    def get_quantity(self, obj):
-        return obj.get_quantity()
-    get_quantity.short_description = "Gesamtbestand"
+    list_display = ('article', 'price', 'quantity', 'get_available_quantity')
+    readonly_fields = ('get_available_quantity', )
 
     def get_available_quantity(self, obj):
         return obj.get_available_quantity()

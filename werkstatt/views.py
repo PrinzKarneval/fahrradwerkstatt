@@ -31,7 +31,7 @@ def dashboard(request):
     ).prefetch_related("articles__stock_article__article")
 
     for order in open_orders:
-        open_orders_value += order.get_total_article_price()
+        open_orders_value += order.get_total_articles_price()
 
     # --------------------------------------------------
     # RECHNUNGEN
@@ -305,13 +305,20 @@ class RepairOrderServiceDelete(DeleteView):
 def repair_order_article_plus_one(request, roa_pk):
     roa = get_object_or_404(RepairOrderArticle, pk=roa_pk)
     RepairOrderHandler.update_quantity(roa.order, roa.stock_article, roa.quantity + 1)
-    return HttpResponseRedirect(reverse_lazy('repair_order_detail', args=[roa.order.pk]))
+    return HttpResponseRedirect(reverse('repair_order_detail', args=[roa.order.pk]))
 
 
 def repair_order_article_minus_one(request, roa_pk):
     roa = get_object_or_404(RepairOrderArticle, pk=roa_pk)
     RepairOrderHandler.update_quantity(roa.order, roa.stock_article, roa.quantity - 1)
     return HttpResponseRedirect(reverse_lazy('repair_order_detail', args=[roa.order.pk]))
+
+
+def repair_order_service_plus_one(request, ros_pk):
+    ros = get_object_or_404(RepairOrderService, pk=ros_pk)
+    ros.quantity += 1
+    ros.save(update_fields=["quantity"])
+    return HttpResponseRedirect(reverse('repair_order_detail', args=[ros.order.pk]))
 
 
 class RepairOrderArticleAdd(CreateView):
@@ -475,7 +482,7 @@ class InvoiceCreateFromRepairOrder(CreateView):
                 hub_engine=ros.service.hub_engine,
                 mid_engine=ros.service.mid_engine,
                 quantity=ros.quantity,
-                price=ros.get_total(),
+                price=RepairOrderPricingService.calculate_service_price(ros),
             )
 
     def get_success_url(self):

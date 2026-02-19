@@ -2,7 +2,7 @@ from decimal import Decimal
 from django.core.exceptions import ValidationError, PermissionDenied
 from django.core.validators import MinValueValidator
 from django.db import models, transaction
-from django.db.models import Sum, F, Q
+from django.db.models import Sum, F, Q, UniqueConstraint, Case, When, IntegerField, Value
 from django.db.models.functions import Coalesce
 from django.urls import reverse
 from django.utils import timezone
@@ -27,8 +27,10 @@ class MovementType(models.IntegerChoices):
     IN_STORNO = 7, 'IN | RECHNUNG STORNIERT'
     OUT_SCRAP = 8, 'OUT | AUSSCHUSS'
 
+
 STOCK_IN = [MovementType.IN_DELIVERY, MovementType.IN_STORNO]
 STOCK_OUT = [MovementType.OUT_ADJUSTMENT, MovementType.OUT_RETURN, MovementType.OUT_SOLD, MovementType.OUT_SCRAP]
+
 
 class Manufacturer(models.Model):
     name = models.CharField(max_length=100)
@@ -154,9 +156,6 @@ class Article(AbstractArticle):
         total_value = Decimal("0.00")
 
         for sa in stock_articles:
-            if sa.qty <= 0:
-                continue
-
             total_qty += sa.qty
             total_value += Decimal(sa.qty) * sa.price
 
@@ -166,12 +165,50 @@ class Article(AbstractArticle):
         return (total_value / Decimal(total_qty)).quantize(Decimal("0.01"))
 
 
+def quantity_expression_for_article():
+    return Coalesce(
+        Sum(
+            Case(
+                When(movements__movement_type__in=STOCK_IN,
+                     then=F('movements__quantity')),
+                When(movements__movement_type__in=STOCK_OUT,
+                     then=-F('movements__quantity')),
+                default=Value(0),
+                output_field=IntegerField(),
+            )
+        ),
+        Value(0)
+    )
+
+def quantity_expression_for_movement():
+    return Coalesce(
+        Sum(
+            Case(
+                When(movement_type__in=STOCK_IN, then=F('quantity')),
+                When(movement_type__in=STOCK_OUT, then=-F('quantity')),
+                default=Value(0),
+                output_field=IntegerField(),
+            )
+        ),
+        Value(0)
+    )
+
+
+class StockArticleManager(models.Manager):
+    def with_quantity(self):
+        return self.get_queryset().annotate(
+            _quantity=quantity_expression_for_article()
+        )
+
 class StockArticle(models.Model):
     article = models.ForeignKey(Article, on_delete=models.PROTECT, related_name='stock_articles',
                                 verbose_name='Lagerartikel')
     price = models.DecimalField(max_digits=7, decimal_places=2, validators=[MinValueValidator(0)])
 
+    objects = StockArticleManager()
+
     class Meta:
+        constraints = [UniqueConstraint(fields=["article", "price"], name='unique_stock_article_price')]
         ordering = ['article']
         verbose_name = 'Lagerartikel'
         verbose_name_plural = 'Lagerartikel'
@@ -179,18 +216,20 @@ class StockArticle(models.Model):
     def __str__(self):
         return self.article.name
 
-    def get_quantity(self):
-        agg = self.movements.aggregate(
-            total_in=Coalesce(Sum('quantity', filter=Q(movement_type__in=STOCK_IN)), 0),
-            total_out=Coalesce(Sum('quantity', filter=Q(movement_type__in=STOCK_OUT)), 0)
-        )
-        return agg['total_in'] - agg['total_out']
+    @property
+    def quantity(self):
+        if hasattr(self, "_quantity"):
+            return self._quantity
+
+        return self.movements.aggregate(
+            quantity=quantity_expression_for_movement()
+        )["quantity"]
 
     def get_reserved_quantity(self):
         return self.reservations.aggregate(total=Coalesce(Sum('quantity'), 0))['total']
 
     def get_available_quantity(self):
-        return self.get_quantity() - self.get_reserved_quantity()
+        return self.quantity - self.get_reserved_quantity()
 
     def get_requested_quantity(self):
         return self.requests.aggregate(total=Coalesce(Sum('quantity'), 0))['total']
@@ -223,13 +262,6 @@ class StockMovement(models.Model):
         ordering = ['created']
         verbose_name = 'Lagerbewegung'
         verbose_name_plural = 'Lagerbewegungen'
-
-    def save(self, *args, **kwargs):
-        available = self.stock_article.get_available_quantity()
-        if self.movement_type in STOCK_OUT and self.quantity > available:
-            raise ValidationError(f"Can not move {self.quantity} units out of stock. Only {available} available")
-
-        super().save(*args, **kwargs)
 
     def delete(self, *args, **kwargs):
         raise PermissionDenied("Dieses Objekt darf nicht gelöscht werden.")

@@ -8,28 +8,6 @@ from lager.models import MovementType
 from lager.services import StockService, DemandService
 
 
-class RepairOrderPricingService:
-    """Calculate prices for services and total order."""
-
-    @staticmethod
-    def calculate_service_price(ros) -> Decimal:
-        from werkstatt.models import WorkRate
-        work_value = ros.get_work_value()
-        work_rate = WorkRate.get_current_rate()
-        return (work_value / Decimal(10)) * work_rate
-
-    @staticmethod
-    def get_total_services_price(order) -> Decimal:
-        return sum(
-            RepairOrderPricingService.calculate_service_price(s)
-            for s in order.services.all()
-        )
-
-    @staticmethod
-    def get_total(repair_order) -> Decimal:
-        return RepairOrderPricingService.get_total_services_price(repair_order) + repair_order.get_total_article_price()
-
-
 class RepairOrderHandler:
     """Handles quantity updates for RepairOrderArticles."""
 
@@ -62,9 +40,10 @@ class RepairOrderLifecycleService:
     @transaction.atomic
     def finish_order(order):
         for roa in order.articles.select_for_update().select_related("stock_article"):
-            StockService.consume_reserved(
+            StockService.create_movement(
                 stock_article=roa.stock_article,
                 quantity=roa.quantity,
+                movement_type=MovementType.OUT_SOLD,
                 reference=f"RO #{order.pk}"
             )
             from werkstatt.models import StockArticleReservation
@@ -139,15 +118,6 @@ class InvoiceCreationService:
             for ros in order.services.all()
         ]
         InvoiceService.objects.bulk_create(invoice_services)
-
-        # Consume reserved stock
-        for roa in order.articles.select_for_update().select_related("stock_article"):
-            StockService.create_movement(
-                stock_article=roa.stock_article,
-                quantity=roa.quantity,
-                movement_type=MovementType.OUT_SOLD,
-                reference=f"RO #{order.pk}"
-            )
 
         order.delete()
         return invoice

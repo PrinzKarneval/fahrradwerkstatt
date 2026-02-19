@@ -2,7 +2,7 @@ from django.core.exceptions import ValidationError
 from django.db import transaction
 from django.utils import timezone
 
-from lager.models import StockMovement, MovementType, StockArticle
+from lager.models import StockMovement, MovementType, StockArticle, STOCK_OUT
 
 
 class StockService:
@@ -12,16 +12,15 @@ class StockService:
         if quantity <= 0:
             return
 
-        if movement_type not in MovementType.values:
-            raise ValidationError('Invalid movement type')
+        if movement_type not in dict(MovementType.choices):
+            raise ValidationError('Ungültiger Bewegungstyp')
 
-        if movement_type in [MovementType.OUT_ADJUSTMENT, MovementType.OUT_RETURN, MovementType.OUT_SOLD,
-                             MovementType.OUT_SCRAP]:
+        if movement_type in STOCK_OUT:
             available = stock_article.get_available_quantity()
             if available <= 0:
-                raise ValidationError('No available quantity')
+                raise ValidationError('Lagerartikel ist nicht verfügbar')
             elif available < quantity:
-                raise ValidationError(f"Only '{available}' '{stock_article}' available")
+                raise ValidationError(f"Nur '{available}' Einheiten von '{stock_article}' sind verfügbar")
 
         StockMovement.objects.create(
             stock_article=stock_article,
@@ -35,23 +34,29 @@ class StockService:
 
 class DeliveryService:
     @staticmethod
+    def _get_locked_stock_article(da, is_correction):
+        lookup = {"article": da.article, "price": da.price}
+
+        if is_correction:
+            try:
+                return StockArticle.objects.select_for_update().get(**lookup)
+            except StockArticle.DoesNotExist:
+                raise ValidationError(f"Lagerartikel '{da.article}' mit Preis {da.price} existiert nicht")
+        else:
+            sa, _ = StockArticle.objects.select_for_update().get_or_create(**lookup)
+            return sa
+
+    @staticmethod
     @transaction.atomic
     def check_in_delivery(delivery):
         if delivery.checked_in:
-            raise ValidationError('Lieferung wurde bereits eingebucht.')
+            raise ValidationError('Lieferung wurde bereits eingebucht')
 
         delivery_articles = delivery.articles.select_for_update().select_related('article')
         touched_stock_articles = set()
 
         for da in delivery_articles:
-            if delivery.is_correction:
-                try:
-                    sa = StockArticle.objects.get(article=da.article, price=da.price)
-                except StockArticle.DoesNotExist:
-                    raise ValidationError(f"Lagerartikel '{da.article}' mit Preis {da.price} existiert nicht")
-            else:
-                sa, _ = StockArticle.objects.get_or_create(article=da.article, price=da.price)
-            sa = StockArticle.objects.select_for_update().get(pk=sa.pk)
+            sa = DeliveryService._get_locked_stock_article(da, is_correction=delivery.is_correction)
 
             if delivery.is_correction:
                 sa_available = sa.get_available_quantity()
@@ -96,6 +101,7 @@ class DemandService:
 
         for req in requests:
             sa = sa_map[req.stock_article_id]
+
             available = sa.get_available_quantity()
             if available <= 0:
                 continue
@@ -110,11 +116,13 @@ class DemandService:
                 continue
 
             # Reservation anlegen oder aktualisieren
-            res, _ = StockArticleReservation.objects.get_or_create(
+            res, created = StockArticleReservation.objects.get_or_create(
                 repair_order_article=req.repair_order_article,
                 stock_article=sa,
-                defaults={'quantity': 0}
-            )
+                defaults={'quantity': 0})
+            if not created:
+                res = StockArticleReservation.objects.select_for_update().get(pk=res.pk)
+
             res.quantity += reserve_qty
             res.save(update_fields=['quantity'])
 
@@ -140,6 +148,9 @@ class DemandService:
             .select_related('stock_article')
         )
 
+        if not roas.exists():
+            return
+
         # Alle StockArticles in Bulk abrufen
         sa_map = {
             sa.id: sa for sa in StockArticle.objects.select_for_update().filter(
@@ -151,11 +162,10 @@ class DemandService:
             sa = sa_map[roa.stock_article_id]
 
             # Reservation + Request in einem Schritt abrufen
-            reservation, request = StockArticleReservation.objects.filter(
-                repair_order_article=roa, stock_article=sa
-            ).first(), StockArticleRequest.objects.filter(
-                repair_order_article=roa, stock_article=sa
-            ).first()
+            reservation = StockArticleReservation.objects.select_for_update().filter(repair_order_article=roa,
+                stock_article=sa).first()
+            request = StockArticleRequest.objects.select_for_update().filter(repair_order_article=roa,
+                stock_article=sa).first()
 
             reserved_qty = reservation.quantity if reservation else 0
             request_qty = request.quantity if request else 0
@@ -205,11 +215,11 @@ class DemandService:
         """
         sa = StockArticle.objects.select_for_update().get(pk=roa.stock_article_id)
 
-        reservation = StockArticleReservation.objects.filter(
+        reservation = StockArticleReservation.objects.select_for_update().filter(
             repair_order_article=roa,
             stock_article=sa
         ).first()
-        request = StockArticleRequest.objects.filter(
+        request = StockArticleRequest.objects.select_for_update().filter(
             repair_order_article=roa,
             stock_article=sa
         ).first()
