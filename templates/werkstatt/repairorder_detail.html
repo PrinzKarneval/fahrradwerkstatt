@@ -61,7 +61,7 @@
             {% else %}
             <th class="border-0" colspan="5">Preis Arbeiten</th>
             {% endif %}
-            <th class="border-0">{{object.get_total_services_price}} €</th>
+            <th class="border-0"> €</th>
         </tr>
         <tr class="text-end">
             <th class="text-start pt-4">Teile</th>
@@ -100,11 +100,11 @@
             {% else %}
             <th class="border-0" colspan="5">Preis Artikel</th>
             {% endif %}
-            <th class="border-0">{{object.get_total_articles_price}} €</th>
+            <th class="border-0"> €</th>
         </tr>
         <tr class="text-end">
             <th colspan="5">Gesamtpreis</th>
-            <th>{{object.get_total_price}} €</th>
+            <th></th>
         </tr>
     </table>
     <div class="text-end">

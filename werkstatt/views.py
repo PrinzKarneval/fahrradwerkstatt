@@ -215,7 +215,7 @@ class RepairOrderDetail(DetailView):
 
 class RepairOrderCreate(CreateView):
     model = RepairOrder
-    template_name = 'werkstatt/form.html'
+    template_name = 'werkstatt/repairorder_form.html'
     form_class = RepairOrderForm
 
     def get_initial(self):
@@ -228,6 +228,7 @@ class RepairOrderCreate(CreateView):
         context = super().get_context_data(**kwargs)
         context["back_link"] = reverse_lazy("customer_detail", args=[self.kwargs.get('pk')])
         context['title'] = "Auftrag erstellen"
+        context["pk"] = self.kwargs.get('pk')
         return context
 
     def form_valid(self, form):

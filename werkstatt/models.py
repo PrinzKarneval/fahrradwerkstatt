@@ -8,7 +8,7 @@ class Customer(models.Model):
     email = models.EmailField(blank=True, null=True, verbose_name='Email')
     phone = models.CharField(max_length=25, blank=True, null=True, verbose_name='Telefon')
     postal = models.CharField(max_length=5, verbose_name='PLZ')
-    city = models.CharField(max_length=50, default='Nürnberg', verbose_name='Ort')
+    city = models.CharField(max_length=50, default='Erlangen', verbose_name='Ort')
     street = models.CharField(max_length=100, verbose_name='Straße')
     str_no = models.CharField(max_length=20, verbose_name='Nr.')
 

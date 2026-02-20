@@ -1,0 +1,94 @@
+{% extends "base.html" %}
+{% block content %}
+
+    <h4 class="mb-0">Reparaturauftrag erstellen</h4>
+
+    <form method="post" novalidate>
+        {% csrf_token %}
+
+        <!-- Formularfehler global -->
+        {% if form.non_field_errors %}
+            <div class="alert alert-danger">
+                {{ form.non_field_errors }}
+            </div>
+        {% endif %}
+
+        <!-- Kunde -->
+        <div class="mb-3">
+            <label for="{{ form.customer.id_for_label }}" class="form-label">
+                {{ customer }}
+            </label>
+            {{ form.customer }}
+            {% if form.customer.errors %}
+                <div class="invalid-feedback d-block">
+                    {{ form.customer.errors.0 }}
+                </div>
+            {% endif %}
+        </div>
+
+        <!-- Beschreibung -->
+        <div class="mb-3">
+            <label for="{{ form.description.id_for_label }}" class="form-label">
+                Beschreibung
+            </label>
+            {{ form.description }}
+            {% if form.description.errors %}
+                <div class="invalid-feedback d-block">
+                    {{ form.description.errors.0 }}
+                </div>
+            {% endif %}
+        </div>
+
+        <!-- E-Bike -->
+        <div class="form-check mb-4">
+            {{ form.is_ebike }}
+            <label class="form-check-label" for="{{ form.is_ebike.id_for_label }}">
+                E-Bike
+            </label>
+        </div>
+
+        <hr>
+
+        <h5 class="mb-3">Fahrraddaten</h5>
+
+        <div class="row">
+            <div class="col-md-6 mb-3">
+                <label class="form-label">Hersteller</label>
+                {{ form.manufacturer }}
+                {% if form.manufacturer.errors %}
+                    <div class="invalid-feedback d-block">
+                        {{ form.manufacturer.errors.0 }}
+                    </div>
+                {% endif %}
+            </div>
+
+            <div class="col-md-6 mb-3">
+                <label class="form-label">Modell</label>
+                {{ form.bike_model }}
+            </div>
+        </div>
+
+        <div class="row">
+            <div class="col-md-6 mb-3">
+                <label class="form-label">Farbe</label>
+                {{ form.color }}
+            </div>
+
+            <div class="col-md-6 mb-3">
+                <label class="form-label">Seriennummer</label>
+                {{ form.serial_number }}
+            </div>
+        </div>
+
+        <div class="d-flex justify-content-between mt-4">
+            <a href="{% url 'customer_detail' pk %}" class="btn btn-secondary">
+                Abbrechen
+            </a>
+            <button type="submit" class="btn btn-success">
+                Speichern
+            </button>
+        </div>
+
+    </form>
+
+{% endblock %}

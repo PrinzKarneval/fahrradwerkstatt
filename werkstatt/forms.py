@@ -34,7 +34,29 @@ class InvoiceForm(forms.ModelForm):
 class RepairOrderForm(forms.ModelForm):
     class Meta:
         model = RepairOrder
-        exclude = ['date_created', 'date_finished', 'invoice', 'customer']
+        exclude = ['date_created', 'date_finished', 'invoice']
+        fields = [
+            "customer",
+            "description",
+            "is_ebike",
+            "manufacturer",
+            "bike_model",
+            "color",
+            "serial_number",
+        ]
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+
+        for name, field in self.fields.items():
+            if isinstance(field.widget, forms.CheckboxInput):
+                field.widget.attrs.update({'class': 'form-check-input'})
+            elif isinstance(field.widget, forms.Select):
+                field.widget.attrs.update({'class': 'form-select'})
+            else:
+                field.widget.attrs.update({'class': 'form-control'})
+        self.fields['customer'].disabled = True
+        self.fields['customer'].widget.attrs.update({'class': 'form-control'})
 
 
 class RepairOrderArticleForm(forms.ModelForm):
