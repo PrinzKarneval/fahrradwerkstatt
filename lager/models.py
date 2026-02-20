@@ -21,7 +21,7 @@ def decimal_field_default():
 
 class MovementType(models.IntegerChoices):
     IN_DELIVERY = 1, 'IN | LIEFERUNG'
-    OUT_ADJUSTMENT = 2, 'OUT | LIEFERKORREKTUR'
+    OUT_CORRECTION = 2, 'OUT | LIEFERKORREKTUR'
     OUT_RETURN = 3, 'OUT | LIEFER-RETOUR'
     OUT_SOLD = 6, 'OUT | VERKAUFT'
     IN_STORNO = 7, 'IN | RECHNUNG STORNIERT'
@@ -29,7 +29,7 @@ class MovementType(models.IntegerChoices):
 
 
 STOCK_IN = [MovementType.IN_DELIVERY, MovementType.IN_STORNO]
-STOCK_OUT = [MovementType.OUT_ADJUSTMENT, MovementType.OUT_RETURN, MovementType.OUT_SOLD, MovementType.OUT_SCRAP]
+STOCK_OUT = [MovementType.OUT_CORRECTION, MovementType.OUT_RETURN, MovementType.OUT_SOLD, MovementType.OUT_SCRAP]
 
 
 class Manufacturer(models.Model):
@@ -119,8 +119,8 @@ class Article(AbstractArticle):
             .aggregate(total=Coalesce(Sum('quantity'), 0))['total']
 
     def get_requested_quantity(self):
-        from werkstatt.models import StockArticleRequest
-        return StockArticleRequest.objects.filter(stock_article__article=self) \
+        from werkstatt.models import ArticleRequest
+        return ArticleRequest.objects.filter(article=self) \
             .aggregate(total=Coalesce(Sum('quantity'), 0))['total']
 
     def get_available_quantity(self):
@@ -180,6 +180,7 @@ def quantity_expression_for_article():
         Value(0)
     )
 
+
 def quantity_expression_for_movement():
     return Coalesce(
         Sum(
@@ -200,10 +201,11 @@ class StockArticleManager(models.Manager):
             _quantity=quantity_expression_for_article()
         )
 
+
 class StockArticle(models.Model):
     article = models.ForeignKey(Article, on_delete=models.PROTECT, related_name='stock_articles',
                                 verbose_name='Lagerartikel')
-    price = models.DecimalField(max_digits=7, decimal_places=2, validators=[MinValueValidator(0)])
+    price = models.DecimalField(max_digits=10, decimal_places=2, validators=[MinValueValidator(0)])
 
     objects = StockArticleManager()
 
@@ -250,21 +252,55 @@ class StockArticle(models.Model):
         return stock - reserved - requested + ordered
 
 
-class StockMovement(models.Model):
+class ImmutableQuerySet(models.QuerySet):
+    def update(self, *args, **kwargs):
+        raise PermissionDenied("Bulk-Update ist für StockMovement nicht erlaubt.")
+
+    def bulk_update(self, *args, **kwargs):
+        raise PermissionDenied("bulk_update ist für StockMovement nicht erlaubt.")
+
+    def delete(self):
+        raise PermissionDenied("Bulk-Delete ist für StockMovement nicht erlaubt.")
+
+
+class ImmutableManager(models.Manager):
+    def get_queryset(self):
+        return ImmutableQuerySet(self.model, using=self._db)
+
+
+class ImmutableModel(models.Model):
+    objects = ImmutableManager()
+
+    class Meta:
+        abstract = True
+
+    def save(self, *args, **kwargs):
+        if self.pk:
+            raise PermissionDenied(
+                f"{self.__class__.__name__} darf nicht verändert werden."
+            )
+        return super().save(*args, **kwargs)
+
+    def delete(self, *args, **kwargs):
+        raise PermissionDenied(
+            f"{self.__class__.__name__} darf nicht gelöscht werden."
+        )
+
+
+class StockMovement(ImmutableModel):
     stock_article = models.ForeignKey(StockArticle, on_delete=models.PROTECT, related_name='movements')
     quantity = models.PositiveSmallIntegerField(validators=[MinValueValidator(1)])
-    price = models.DecimalField(max_digits=7, decimal_places=2, verbose_name='Preis')
+    price = models.DecimalField(max_digits=10, decimal_places=2, verbose_name='Preis')
     movement_type = models.PositiveSmallIntegerField(choices=MovementType.choices)
     reference = models.CharField(max_length=100)
     created = models.DateTimeField(auto_now_add=True)
+
+    objects = ImmutableManager()
 
     class Meta:
         ordering = ['created']
         verbose_name = 'Lagerbewegung'
         verbose_name_plural = 'Lagerbewegungen'
-
-    def delete(self, *args, **kwargs):
-        raise PermissionDenied("Dieses Objekt darf nicht gelöscht werden.")
 
 
 class SupplyOrder(models.Model):

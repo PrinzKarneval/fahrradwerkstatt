@@ -87,7 +87,7 @@ def dashboard(request):
     stock_value_selling = Decimal("0.00")
     for sa in stock_articles:
         qty = sa.stock_qty or 0
-        stock_value_selling += (sa.article.price or Decimal("0.00")) * qty
+        stock_value_selling += (sa.stock_article.price or Decimal("0.00")) * qty
 
     # --------------------------------------------------
     # ARTIKELBESTAND NACH ARTIKEL (WICHTIG: neu!)
@@ -450,7 +450,7 @@ class InvoiceCreateFromRepairOrder(CreateView):
     def create_invoice_articles(repair_order, invoice):
         repair_order_articles = repair_order.repairorderarticle_set.all()
         for roa in repair_order_articles:
-            article = roa.stock_article.article
+            article = roa.stock_article.stock_article
             InvoiceArticle.objects.create(
                 manufacturer=article.manufacturer,
                 type=article.type,

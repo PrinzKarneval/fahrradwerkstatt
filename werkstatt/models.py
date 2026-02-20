@@ -27,21 +27,6 @@ class Customer(models.Model):
         return self.orders.filter(date_finished__isnull=True).count()
 
 
-class Manufacturer(models.Model):
-    name = models.CharField(max_length=100, verbose_name='Hersteller')
-
-    class Meta:
-        ordering = ['name']
-        verbose_name = 'Hersteller'
-        verbose_name_plural = 'Hersteller'
-
-    def __str__(self):
-        return self.name
-
-    def get_absolute_url(self):
-        return reverse('manufacturer_detail', kwargs={'pk': self.pk})
-
-
 class RepairOrderQuerySet(models.QuerySet):
 
     def with_totals(self):
@@ -102,7 +87,7 @@ class RepairOrder(models.Model):
     date_finished = models.DateTimeField(blank=True, null=True, verbose_name='Abgeschlossen')
     description = models.TextField(blank=True, verbose_name='Beschreibung')
     is_ebike = models.BooleanField(default=False, verbose_name='Ist E-Bike')
-    manufacturer = models.CharField(max_length=100, verbose_name='Hersteller')
+    manufacturer = models.ForeignKey(Manufacturer, on_delete=models.SET_NULL, null=True, blank=True, verbose_name='Hersteller')
     bike_model = models.CharField(max_length=50, blank=True, null=True, verbose_name='Modell')
     color = models.CharField(max_length=30, blank=True, null=True, verbose_name='Farbe')
     serial_number = models.CharField(max_length=50, blank=True, null=True, verbose_name='Seriennummer')
@@ -167,7 +152,7 @@ class RepairOrderArticle(models.Model):
         return f'{self.stock_article} x {self.quantity}'
 
     def get_total(self) -> Decimal:
-        return self.stock_article.article.price * self.quantity
+        return self.stock_article.price * self.quantity
 
     def get_reservations_quantity(self):
         return self.reservations.aggregate(quantity=Coalesce(Sum('quantity'), 0))['quantity']
@@ -242,8 +227,6 @@ class StockArticleReservation(models.Model):
     stock_article = models.ForeignKey(StockArticle, on_delete=models.CASCADE, related_name='reservations',
                                       verbose_name='Lagerartikel')
     quantity = models.PositiveIntegerField(default=0, verbose_name='Anzahl')
-    created = models.DateTimeField(auto_now_add=True, verbose_name='Erstellt')
-    updated = models.DateTimeField(auto_now=True, verbose_name='Aktualisiert')
 
     class Meta:
         constraints = [
@@ -257,19 +240,17 @@ class StockArticleReservation(models.Model):
         return f'{self.stock_article} reserviert für {self.repair_order_article} ({self.quantity})'
 
 
-class StockArticleRequest(models.Model):
+class ArticleRequest(models.Model):
     repair_order_article = models.ForeignKey(RepairOrderArticle, on_delete=models.CASCADE, related_name='requests',
                                              verbose_name='Reparaturauftrag')
     article = models.ForeignKey(Article, on_delete=models.CASCADE, related_name='requests', verbose_name='Artikel')
     quantity = models.PositiveIntegerField(default=0, verbose_name='Anzahl')
-    created = models.DateTimeField(auto_now_add=True, verbose_name='Erstellt')
-    updated = models.DateTimeField(auto_now=True, verbose_name='Aktualisiert')
 
     class Meta:
         constraints = [
             models.UniqueConstraint(fields=['repair_order_article', 'article'], name='unique_roa_and_article'),
         ]
-        ordering = ['created']
+        ordering = ['repair_order_article', 'article']
         verbose_name = 'Angeforderter Lagerartikel'
         verbose_name_plural = 'Angeforderte Lagerartikel'
 
@@ -321,18 +302,9 @@ class InvoiceArticle(models.Model):
 
 class InvoiceService(models.Model):
     invoice = models.ForeignKey(Invoice, on_delete=models.CASCADE, related_name='services')
-    main_category = models.CharField(max_length=100)
-    sub_category = models.CharField(max_length=100, blank=True, null=True)
+    category = models.CharField(max_length=100)
     number = models.PositiveSmallIntegerField()
     name = models.CharField(max_length=100)
-    children_bike = decimal_field_default()
-    hub_gear = decimal_field_default()
-    derailleur = decimal_field_default()
-    mtb = decimal_field_default()
-    road_bike = decimal_field_default()
-    cargo_bike = decimal_field_default()
-    hub_engine = decimal_field_default()
-    mid_engine = decimal_field_default()
     price = decimal_field_default()
     quantity = models.PositiveIntegerField(default=1, validators=[MinValueValidator(1)])
 

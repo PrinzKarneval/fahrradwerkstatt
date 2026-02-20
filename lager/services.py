@@ -2,7 +2,7 @@ from django.core.exceptions import ValidationError
 from django.db import transaction
 from django.utils import timezone
 
-from lager.models import StockMovement, MovementType, StockArticle, STOCK_OUT
+from lager.models import StockMovement, MovementType, StockArticle, STOCK_OUT, Article
 
 
 class StockService:
@@ -53,6 +53,10 @@ class DeliveryService:
             raise ValidationError('Lieferung wurde bereits eingebucht')
 
         delivery_articles = delivery.articles.select_for_update().select_related('article')
+
+        if len(delivery_articles) == 0:
+            raise ValidationError("Keine Artikel in Lieferung vorhanden")
+
         touched_stock_articles = set()
 
         for da in delivery_articles:
@@ -64,7 +68,7 @@ class DeliveryService:
                     raise ValidationError(f"Korrektur nicht möglich, nur {sa_available} von {da.quantity} vorhanden")
 
             touched_stock_articles.add(sa)
-            mt = MovementType.OUT_ADJUSTMENT if delivery.is_correction else MovementType.IN_DELIVERY
+            mt = MovementType.OUT_CORRECTION if delivery.is_correction else MovementType.IN_DELIVERY
             StockService.create_movement(
                 stock_article=sa,
                 quantity=da.quantity,
@@ -80,17 +84,17 @@ class DemandService:
     @staticmethod
     @transaction.atomic
     def update_demands(stock_articles):
-        from werkstatt.models import StockArticleRequest, StockArticleReservation
+        from werkstatt.models import ArticleRequest, StockArticleReservation
         """
         Aktualisiert alle offenen Requests für die übergebenen StockArticles.
         Verteilt verfügbare Mengen auf Reservations und reduziert Requests.
         """
+        articles = {sa.article for sa in stock_articles}
         # Alle relevanten Requests abrufen
         requests = (
-            StockArticleRequest.objects
+            ArticleRequest.objects
             .select_for_update(skip_locked=True)
-            .filter(stock_article__in=stock_articles)
-            .order_by('created')
+            .filter(article__in=articles)
             .select_related('repair_order_article')
         )
 
@@ -136,7 +140,7 @@ class DemandService:
     @staticmethod
     @transaction.atomic
     def create_demands(ro):
-        from werkstatt.models import StockArticleRequest, StockArticleReservation, RepairOrderArticle
+        from werkstatt.models import ArticleRequest, StockArticleReservation, RepairOrderArticle
         """
         Erstellt / synchronisiert Reservations + Requests
         für alle RepairOrderArticles eines RepairOrders.
@@ -164,8 +168,8 @@ class DemandService:
             # Reservation + Request in einem Schritt abrufen
             reservation = StockArticleReservation.objects.select_for_update().filter(repair_order_article=roa,
                 stock_article=sa).first()
-            request = StockArticleRequest.objects.select_for_update().filter(repair_order_article=roa,
-                stock_article=sa).first()
+            request = ArticleRequest.objects.select_for_update().filter(repair_order_article=roa,
+                                                                        stock_article=sa).first()
 
             reserved_qty = reservation.quantity if reservation else 0
             request_qty = request.quantity if request else 0
@@ -198,7 +202,7 @@ class DemandService:
                     request.quantity = request_qty_new
                     request.save(update_fields=['quantity'])
                 else:
-                    StockArticleRequest.objects.create(
+                    ArticleRequest.objects.create(
                         repair_order_article=roa,
                         stock_article=sa,
                         quantity=request_qty_new
@@ -209,7 +213,7 @@ class DemandService:
     @staticmethod
     @transaction.atomic
     def sync_repair_order_article(roa):
-        from werkstatt.models import StockArticleRequest, StockArticleReservation
+        from werkstatt.models import ArticleRequest, StockArticleReservation
         """
         Synchronisiert einen einzelnen RepairOrderArticle.
         """
@@ -219,7 +223,7 @@ class DemandService:
             repair_order_article=roa,
             stock_article=sa
         ).first()
-        request = StockArticleRequest.objects.select_for_update().filter(
+        request = ArticleRequest.objects.select_for_update().filter(
             repair_order_article=roa,
             stock_article=sa
         ).first()
@@ -250,7 +254,7 @@ class DemandService:
                     request.quantity += to_request
                     request.save(update_fields=['quantity'])
                 else:
-                    request = StockArticleRequest.objects.create(
+                    request = ArticleRequest.objects.create(
                         repair_order_article=roa,
                         stock_article=sa,
                         quantity=to_request

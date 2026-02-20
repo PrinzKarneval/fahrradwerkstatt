@@ -48,12 +48,10 @@
                     <td>{{ sa.pk }}</td>
                     <td colspan="4"></td>
                     <td>{{ sa.price }} €</td>
-                    <td>{{ sa.get_quantity }}</td>
+                    <td>{{ sa.quantity }}</td>
                     <td>{{ sa.get_reserved_quantity }}</td>
                     <td>{{ sa.get_available_quantity }}</td>
-                    <td>{{ sa.get_requested_quantity }}</td>
-                    <td>{{ sa.get_ordered_quantity }}</td>
-                    <td>{{ sa.get_future_quantity }}</td>
+                    <td colspan="3"></td>
                 </tr>
             {% endfor %}
 

@@ -1,277 +1,251 @@
 [
-  {
+{
     "model": "lager.manufacturer",
     "pk": 1,
     "fields": {
-      "name": "SRAM"
+        "name": "Continental"
     }
-  },
-  {
+},
+{
     "model": "lager.manufacturer",
     "pk": 2,
     "fields": {
-      "name": "Shimano"
+        "name": "Maxxis"
     }
-  },
-  {
+},
+{
     "model": "lager.manufacturer",
     "pk": 3,
     "fields": {
-      "name": "Continental"
+        "name": "DT Swiss"
     }
-  },
-  {
-    "model": "lager.manufacturer",
-    "pk": 4,
-    "fields": {
-      "name": "Maxxis"
-    }
-  },
-  {
-    "model": "lager.manufacturer",
-    "pk": 5,
-    "fields": {
-      "name": "DT Swiss"
-    }
-  },
-  {
-    "model": "lager.manufacturer",
-    "pk": 6,
-    "fields": {
-      "name": "Cube"
-    }
-  },
-  {
-    "model": "lager.manufacturer",
-    "pk": 7,
-    "fields": {
-      "name": "YT Industries"
-    }
-  },
-  {
-    "model": "lager.manufacturer",
-    "pk": 8,
-    "fields": {
-      "name": "Canyon"
-    }
-  },
-  {
-    "model": "lager.manufacturer",
-    "pk": 9,
-    "fields": {
-      "name": "KMC"
-    }
-  },
-  {
+},
+{
     "model": "lager.vendor",
     "pk": 1,
     "fields": {
-      "name": "Hermann Hartje KG",
-      "email": "info@hartje.de",
-      "phone": "+49 4251 811 0",
-      "country": "Deutschland",
-      "postal": "27318",
-      "city": "Hoya",
-      "street": "Deichstraße",
-      "str_no": "120-122"
+        "name": "Hartje",
+        "email": null,
+        "phone": null,
+        "country": "Deutschland",
+        "postal": "123",
+        "city": "N³rnberg",
+        "street": "123123",
+        "str_no": "123"
     }
-  },
-  {
+},
+{
     "model": "lager.vendor",
     "pk": 2,
     "fields": {
-      "name": "Paul Lange GmbH & Co. KG",
-      "email": "info@paul-lange.de",
-      "phone": "+49 711 2588 02",
-      "country": "Deutschland",
-      "postal": "70372",
-      "city": "Stuttgart",
-      "street": "Hofener Straße",
-      "str_no": "114"
+        "name": "Paul Lange",
+        "email": null,
+        "phone": null,
+        "country": "Deutschland",
+        "postal": "123",
+        "city": "N³rnberg",
+        "street": "123",
+        "str_no": "123"
     }
-  },
-  {
+},
+{
     "model": "lager.vendor",
     "pk": 3,
     "fields": {
-      "name": "Cosmic Sports GmbH",
-      "email": "info@cosmicsports.de",
-      "phone": "+49 911 310755 0",
-      "country": "Deutschland",
-      "postal": "90763",
-      "city": "Fürth",
-      "street": "Leyher Straße",
-      "str_no": "47"
+        "name": "Cosmic",
+        "email": null,
+        "phone": null,
+        "country": "Deutschland",
+        "postal": "123",
+        "city": "N³rnberg",
+        "street": "123",
+        "str_no": "123"
     }
-  },
-  {
+},
+{
     "model": "lager.articletype",
     "pk": 1,
     "fields": {
-      "parent": null,
-      "name": "Schaltwerk"
+        "parent": null,
+        "name": "Reifen"
     }
-  },
-  {
+},
+{
     "model": "lager.articletype",
     "pk": 2,
     "fields": {
-      "parent": null,
-      "name": "Reifen"
+        "parent": null,
+        "name": "Felge"
     }
-  },
-  {
-    "model": "lager.articletype",
-    "pk": 3,
-    "fields": {
-      "parent": null,
-      "name": "Umwerfer"
-    }
-  },
-  {
-    "model": "lager.articletype",
-    "pk": 4,
-    "fields": {
-      "parent": null,
-      "name": "Felge"
-    }
-  },
-  {
-    "model": "lager.articletype",
-    "pk": 5,
-    "fields": {
-      "parent": null,
-      "name": "Federgabel"
-    }
-  },
-  {
-    "model": "lager.articletype",
-    "pk": 6,
-    "fields": {
-      "parent": null,
-      "name": "Dõmpfer"
-    }
-  },
-  {
-    "model": "lager.articletype",
-    "pk": 7,
-    "fields": {
-      "parent": null,
-      "name": "Kette"
-    }
-  },
-  {
+},
+{
     "model": "lager.article",
     "pk": 1,
     "fields": {
-      "manufacturer": 1,
-      "type": 1,
-      "name": "GX 12 Gang",
-      "description": "",
-      "ean": "123",
-      "price": "99.00",
-      "minimum": 0
+        "manufacturer": 3,
+        "type": 1,
+        "name": "EX 511 29 30 mm DB VI",
+        "description": "",
+        "ean": "123",
+        "price": "99.00",
+        "minimum": 0
     }
-  },
-  {
+},
+{
     "model": "lager.article",
     "pk": 2,
     "fields": {
-      "manufacturer": 9,
-      "type": 7,
-      "name": "X12 Silber",
-      "description": "",
-      "ean": "BX12NP126",
-      "price": "44.90",
-      "minimum": 0
+        "manufacturer": 2,
+        "type": 1,
+        "name": "Highroller 2",
+        "description": "",
+        "ean": "2334",
+        "price": "79.00",
+        "minimum": 0
     }
-  },
-  {
+},
+{
     "model": "lager.article",
     "pk": 3,
     "fields": {
-      "manufacturer": 5,
-      "type": 4,
-      "name": "EX 511 29 30 mm DB VI",
-      "description": "Entwickelt f│r die schnellsten EWS-Fahrer ¹ die 30 mm breite geschweisste Enduro-Felge.",
-      "ean": "RDEX51CDPW32SA6298",
-      "price": "99.90",
-      "minimum": 0
+        "manufacturer": 1,
+        "type": 1,
+        "name": "Kryptotal F Downhill Soft",
+        "description": "",
+        "ean": "99",
+        "price": "99.00",
+        "minimum": 0
     }
-  },
-  {
-    "model": "lager.article",
+},
+{
+    "model": "werkstatt.customer",
+    "pk": 1,
+    "fields": {
+        "name": "Franz Schwerdtmann",
+        "email": "franz.schwerdtmann@gmail.com",
+        "phone": "01624689089",
+        "postal": "90419",
+        "city": "München",
+        "street": "Helmstraße",
+        "str_no": "43"
+    }
+},
+{
+    "model": "werkstatt.customer",
+    "pk": 2,
+    "fields": {
+        "name": "Selina Külle",
+        "email": "s.k@gmail.com",
+        "phone": "0166666666",
+        "postal": "90419",
+        "city": "Nürnberg",
+        "street": "Julienstr",
+        "str_no": "9"
+    }
+},
+{
+    "model": "werkstatt.servicecategory",
+    "pk": 1,
+    "fields": {
+        "name": "Reifen"
+    }
+},
+{
+    "model": "werkstatt.servicecategory",
+    "pk": 2,
+    "fields": {
+        "name": "Antrieb"
+    }
+},
+{
+    "model": "werkstatt.servicecategory",
+    "pk": 3,
+    "fields": {
+        "name": "Bremsen"
+    }
+},
+{
+    "model": "werkstatt.service",
+    "pk": 1,
+    "fields": {
+        "category": 2,
+        "number": 1,
+        "name": "Schaltwerk einstellen",
+        "normal_price": "20.00",
+        "ebike_price": "25.00"
+    }
+},
+{
+    "model": "werkstatt.service",
+    "pk": 2,
+    "fields": {
+        "category": 2,
+        "number": 2,
+        "name": "Schaltwerk ausrichten",
+        "normal_price": "30.00",
+        "ebike_price": "35.00"
+    }
+},
+{
+    "model": "werkstatt.service",
+    "pk": 3,
+    "fields": {
+        "category": 3,
+        "number": 3,
+        "name": "Bremse montieren",
+        "normal_price": "40.00",
+        "ebike_price": "50.00"
+    }
+},
+{
+    "model": "werkstatt.service",
     "pk": 4,
     "fields": {
-      "manufacturer": 5,
-      "type": 4,
-      "name": "FR 541 29 30 mm DB VI",
-      "description": "",
-      "ean": "RDFR54CDPW32SA1490",
-      "price": "99.90",
-      "minimum": 0
+        "category": 3,
+        "number": 4,
+        "name": "Bremse entlüften",
+        "normal_price": "30.00",
+        "ebike_price": "35.00"
     }
-  },
-  {
-    "model": "lager.article",
+},
+{
+    "model": "werkstatt.service",
     "pk": 5,
     "fields": {
-      "manufacturer": 1,
-      "type": 1,
-      "name": "GX Eagle 12-fach",
-      "description": "",
-      "ean": "123123123123",
-      "price": "137.00",
-      "minimum": 0
+        "category": 1,
+        "number": 5,
+        "name": "Reifen wech",
+        "normal_price": "20.00",
+        "ebike_price": "22.00"
     }
-  },
-  {
-    "model": "lager.article",
+},
+{
+    "model": "werkstatt.service",
     "pk": 6,
     "fields": {
-      "manufacturer": 1,
-      "type": 1,
-      "name": "SRAM X01 Eagle 12-fach",
-      "description": "",
-      "ean": "564981",
-      "price": "277.00",
-      "minimum": 0
+        "category": 1,
+        "number": 6,
+        "name": "Mantel wechseln",
+        "normal_price": "25.00",
+        "ebike_price": "28.00"
     }
-  },
-  {
+},
+{
     "model": "auth.user",
     "pk": 1,
     "fields": {
-      "password": "pbkdf2_sha256$870000$cOXpqvrQCEnw7vBuS7hfsq$rfg1re7nypkwElfJg6tsQn/soNf2VYQNjqR68hxPJv0=",
-      "last_login": "2026-02-14T14:24:02.136Z",
-      "is_superuser": true,
-      "username": "franz",
-      "first_name": "",
-      "last_name": "",
-      "email": "",
-      "is_staff": true,
-      "is_active": true,
-      "date_joined": "2026-02-14T14:23:41.434Z",
-      "groups": [],
-      "user_permissions": []
+        "password": "pbkdf2_sha256$870000$dHJxhXkCQG7Zfb2MmUi0dU$m3aGaWWtIYQYzrv+84nfuGE3XJN1IB7h2TcMlFZsMsQ=",
+        "last_login": "2026-02-20T13:44:25.914Z",
+        "is_superuser": true,
+        "username": "franz",
+        "first_name": "",
+        "last_name": "",
+        "email": "",
+        "is_staff": true,
+        "is_active": true,
+        "date_joined": "2026-02-20T13:44:21.594Z",
+        "groups": [],
+        "user_permissions": []
     }
-  },
-  {
-    "model": "auth.user",
-    "pk": 2,
-    "fields": {
-      "password": "pbkdf2_sha256$870000$dGC6w4HoaApKiBMfmcT6bU$4RJ4hXMB3ZGZD+DzMQtCHPsS5hJ70+udjnPgclvMiCI=",
-      "last_login": null,
-      "is_superuser": true,
-      "username": "daniel",
-      "first_name": "",
-      "last_name": "",
-      "email": "",
-      "is_staff": true,
-      "is_active": true,
-      "date_joined": "2026-02-14T14:23:57.737Z",
-      "groups": [],
-      "user_permissions": []
-    }
-  }
+}
 ]

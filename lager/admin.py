@@ -1,18 +1,8 @@
 from django.contrib import admin, messages
-from django.core.exceptions import ValidationError
 
-from lager.models import (
-    ArticleType, Article, StockMovement, Vendor,
-    SupplyOrderArticle, SupplyOrder, Manufacturer,
-    Delivery, DeliveryArticle, StockArticle
-)
+from lager.models import *
 from lager.services import DeliveryService
 
-
-@admin.register(Manufacturer)
-class ManufacturerAdmin(admin.ModelAdmin):
-    list_display = ('name',)
-    search_fields = ('name',)
 
 
 @admin.register(Vendor)
@@ -43,6 +33,9 @@ class StockArticleAdmin(admin.ModelAdmin):
         return obj.get_available_quantity()
     get_available_quantity.short_description = "Verfügbar"
 
+    def has_add_permission(self, request):
+        return False
+
     def has_change_permission(self, request, obj=None):
         return False
 
@@ -52,8 +45,11 @@ class StockArticleAdmin(admin.ModelAdmin):
 
 @admin.register(StockMovement)
 class StockMovementAdmin(admin.ModelAdmin):
-    list_display = ('stock_article', 'quantity', 'movement_type', 'reference', 'created')
-    list_filter = ('movement_type',)
+    list_display = ('stock_article', 'quantity', 'price', 'movement_type', 'reference', 'created')
+    list_filter = ('movement_type', 'stock_article', 'created')
+
+    def has_add_permission(self, request):
+        return False
 
     def has_change_permission(self, request, obj=None):
         return False

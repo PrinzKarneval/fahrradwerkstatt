@@ -4,37 +4,13 @@ from django.db import transaction
 from werkstatt.models import *
 from werkstatt.services import RepairOrderHandler, InvoiceCreationService
 
-
 admin.site.register(Customer)
-admin.site.register(ServiceCategory)
+admin.site.register(Manufacturer)
 
-@admin.register(StockArticleReservation)
-class StockArticleReservationAdmin(admin.ModelAdmin):
-    list_display = ('stock_article', 'repair_order_article', 'quantity')
-    search_fields = ('stock_article__article__name', 'repair_order_article__id')
-
-    def has_change_permission(self, request, obj=None):
-        return False
-
-    def has_delete_permission(self, request, obj=None):
-        return False
-
-@admin.register(StockArticleRequest)
-class StockArticleRequestAdmin(admin.ModelAdmin):
-    list_display = ('stock_article', 'repair_order_article', 'quantity', 'created')
-    search_fields = ('stock_article__article__name', 'repair_order_article__id')
-    list_filter = ('created',)
-
-    def has_change_permission(self, request, obj=None):
-        return False
-
-    def has_delete_permission(self, request, obj=None):
-        return False
 
 class RepairOrderArticleInline(admin.TabularInline):
     model = RepairOrderArticle
     extra = 0
-
 
 
 class RepairOrderServiceInline(admin.TabularInline):
@@ -55,6 +31,40 @@ class RepairOrderAdmin(admin.ModelAdmin):
         obj = form.instance
         for roa in obj.articles.select_related('stock_article').all():
             RepairOrderHandler.update_quantity(obj, roa.stock_article, roa.quantity)
+
+
+admin.site.register(ServiceCategory)
+
+
+@admin.register(Service)
+class ServiceAdmin(admin.ModelAdmin):
+    list_display = ('name', 'category', 'number', 'normal_price', 'ebike_price')
+    list_filter = ('category',)
+    search_fields = ('name',)
+
+
+@admin.register(StockArticleReservation)
+class StockArticleReservationAdmin(admin.ModelAdmin):
+    list_display = ('stock_article', 'repair_order_article', 'quantity')
+    search_fields = ('stock_article__article__name', 'repair_order_article__id')
+
+    def has_change_permission(self, request, obj=None):
+        return False
+
+    def has_delete_permission(self, request, obj=None):
+        return False
+
+
+@admin.register(ArticleRequest)
+class ArticleRequestAdmin(admin.ModelAdmin):
+    list_display = ('article', 'repair_order_article', 'quantity')
+    search_fields = ('article__name', 'repair_order_article__id')
+
+    def has_change_permission(self, request, obj=None):
+        return False
+
+    def has_delete_permission(self, request, obj=None):
+        return False
 
 
 class InvoiceArticleInline(admin.TabularInline):
@@ -79,15 +89,3 @@ class InvoiceAdmin(admin.ModelAdmin):
     def finalize_invoice(self, request, queryset):
         for invoice in queryset:
             InvoiceCreationService.create_invoice(invoice)
-
-@admin.register(Service)
-class ServiceAdmin(admin.ModelAdmin):
-    list_display = ('name', 'category', 'number', 'normal_price', 'ebike_price')
-    list_filter = ('category',)
-    search_fields = ('name',)
-
-@admin.register(WorkRate)
-class WorkRateAdmin(admin.ModelAdmin):
-    list_display = ('rate', 'start_date', 'end_date')
-    list_filter = ('start_date', 'end_date')
-    search_fields = ('rate',)

@@ -60,9 +60,9 @@ class InvoiceCreationService:
     @transaction.atomic
     def create_invoice(order):
         # Check for open stock requests
-        from werkstatt.models import StockArticleRequest, InvoiceArticle, Invoice, InvoiceService
+        from werkstatt.models import ArticleRequest, InvoiceArticle, Invoice, InvoiceService
 
-        if StockArticleRequest.objects.filter(repair_order_article__order=order).exists():
+        if ArticleRequest.objects.filter(repair_order_article__order=order).exists():
             raise ValidationError("Auftrag hat noch offene Materialanforderungen.")
 
         invoice = Invoice.objects.create(
@@ -82,13 +82,13 @@ class InvoiceCreationService:
         # Invoice Articles
         invoice_articles = [
             InvoiceArticle(
-                manufacturer=roa.stock_article.article.manufacturer,
+                manufacturer=roa.stock_article.stock_article.manufacturer,
                 stock_article=roa.stock_article,
-                type=roa.stock_article.article.type,
-                name=roa.stock_article.article.name,
-                description=roa.stock_article.article.description,
-                ean=roa.stock_article.article.ean,
-                price=roa.stock_article.article.price,
+                type=roa.stock_article.stock_article.type,
+                name=roa.stock_article.stock_article.name,
+                description=roa.stock_article.stock_article.description,
+                ean=roa.stock_article.stock_article.ean,
+                price=roa.stock_article.stock_article.price,
                 invoice=invoice,
                 quantity=roa.quantity
             )
