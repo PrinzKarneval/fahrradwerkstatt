@@ -1,13 +1,6 @@
-from decimal import Decimal
+from django.db.models import DecimalField, Subquery, OuterRef
 
-from django.core.exceptions import ValidationError
-from django.core.validators import MinValueValidator
-from django.db import models
-from django.db.models.functions import Coalesce
-from django.urls import reverse
-from django.utils import timezone
-
-from lager.models import decimal_field_default, ArticleType, StockArticle, Manufacturer
+from lager.models import *
 
 
 class Customer(models.Model):
@@ -20,6 +13,7 @@ class Customer(models.Model):
     str_no = models.CharField(max_length=20, verbose_name='Nr.')
 
     class Meta:
+        ordering = ['name']
         verbose_name = 'Kunde'
         verbose_name_plural = 'Kunden'
 
@@ -29,25 +23,96 @@ class Customer(models.Model):
     def get_absolute_url(self):
         return reverse('customer_detail', kwargs={'pk': self.pk})
 
-    def get_open_repairs(self):
+    def get_open_orders(self):
         return self.orders.filter(date_finished__isnull=True).count()
 
 
-class RepairOrder(models.Model):
-    customer = models.ForeignKey(Customer, on_delete=models.PROTECT, related_name='orders')
-    date_created = models.DateTimeField(auto_now_add=True)
-    date_finished = models.DateTimeField(blank=True, null=True)
-    description = models.TextField(blank=True)
-    is_ebike = models.BooleanField(default=False)
-    manufacturer = models.CharField(max_length=100, verbose_name='Hersteller')
-    bike_model = models.CharField(max_length=50, blank=True, null=True)
-    color = models.CharField(max_length=30, blank=True, null=True)
-    serial_number = models.CharField(max_length=50, blank=True, null=True)
+class Manufacturer(models.Model):
+    name = models.CharField(max_length=100, verbose_name='Hersteller')
 
     class Meta:
+        ordering = ['name']
+        verbose_name = 'Hersteller'
+        verbose_name_plural = 'Hersteller'
+
+    def __str__(self):
+        return self.name
+
+    def get_absolute_url(self):
+        return reverse('manufacturer_detail', kwargs={'pk': self.pk})
+
+
+class RepairOrderQuerySet(models.QuerySet):
+
+    def with_totals(self):
+        """
+        Annotates:
+            total_articles
+            total_services
+            total_price
+        All calculated in ONE database query.
+        """
+
+        # --- Article Subquery ---
+        article_subquery = RepairOrderArticle.objects.filter(order=OuterRef("pk")).annotate(
+            total=F("stock_article__article__price") * F("quantity")
+        ).values("order").annotate(sum_total=Sum("total")).values("sum_total")
+
+        # --- Service Subquery ---
+        service_subquery = RepairOrderService.objects.filter(order=OuterRef("pk")).annotate(
+            price=Case(
+                When(order__is_ebike=True, then=F("service__ebike_price")),
+                default=F("service__normal_price"),
+                output_field=DecimalField(max_digits=10, decimal_places=2),
+            ),
+            total=F("price") * F("quantity"),
+        ).values("order").annotate(sum_total=Sum("total")).values("sum_total")
+
+        return self.annotate(
+            total_articles=Coalesce(
+                Subquery(
+                    article_subquery,
+                    output_field=DecimalField(max_digits=10, decimal_places=2),
+                ),
+                Value(0),
+            ),
+            total_services=Coalesce(
+                Subquery(
+                    service_subquery,
+                    output_field=DecimalField(max_digits=10, decimal_places=2),
+                ),
+                Value(0),
+            ),
+        ).annotate(
+            total_price=F("total_articles") + F("total_services")
+        )
+
+
+class RepairOrderManager(models.Manager):
+    def get_queryset(self):
+        return RepairOrderQuerySet(self.model, using=self._db)
+
+    def with_totals(self):
+        return self.get_queryset().with_totals()
+
+
+class RepairOrder(models.Model):
+    customer = models.ForeignKey(Customer, on_delete=models.PROTECT, related_name='orders', verbose_name='Kunde')
+    date_created = models.DateTimeField(auto_now_add=True, verbose_name='Erstellt')
+    date_finished = models.DateTimeField(blank=True, null=True, verbose_name='Abgeschlossen')
+    description = models.TextField(blank=True, verbose_name='Beschreibung')
+    is_ebike = models.BooleanField(default=False, verbose_name='Ist E-Bike')
+    manufacturer = models.CharField(max_length=100, verbose_name='Hersteller')
+    bike_model = models.CharField(max_length=50, blank=True, null=True, verbose_name='Modell')
+    color = models.CharField(max_length=30, blank=True, null=True, verbose_name='Farbe')
+    serial_number = models.CharField(max_length=50, blank=True, null=True, verbose_name='Seriennummer')
+
+    objects = RepairOrderManager()
+
+    class Meta:
+        ordering = ['-date_created']
         verbose_name = 'Reparaturauftrag'
         verbose_name_plural = 'Reparaturaufträge'
-        ordering = ['-date_created']
 
     def __str__(self):
         return f'RO #{self.pk} - {self.customer}'
@@ -56,21 +121,45 @@ class RepairOrder(models.Model):
         return reverse('repair_order_detail', kwargs={'pk': self.pk})
 
     def get_total_articles_price(self):
-        return sum(roa.get_total() for roa in self.articles.select_related("stock_article__article"))
+        return self.articles.aggregate(
+            total=Coalesce(
+                Sum(
+                    F('stock_article__article__price') * F('quantity'),
+                    output_field=DecimalField(decimal_places=2, max_digits=10),
+                ), 0
+            )
+        )['total']
 
     def get_total_services_price(self):
-        return sum(ros.get_total() for ros in self.services.all())
+        price_field = (
+            'service__ebike_price'
+            if self.is_ebike
+            else 'service__normal_price'
+        )
+        return self.services.aggregate(
+            total=Coalesce(
+                Sum(
+                    F(price_field) * F('quantity'),
+                    output_field=DecimalField(decimal_places=2, max_digits=10),
+                ), 0
+            )
+        )['total']
 
     def get_total_price(self) -> Decimal:
         return (self.get_total_articles_price() + self.get_total_services_price()).quantize(Decimal('0.01'))
 
 
 class RepairOrderArticle(models.Model):
-    order = models.ForeignKey(RepairOrder, on_delete=models.CASCADE, related_name='articles')
-    stock_article = models.ForeignKey(StockArticle, on_delete=models.PROTECT)
-    quantity = models.PositiveIntegerField(default=1)
+    order = models.ForeignKey(RepairOrder, on_delete=models.CASCADE, related_name='articles',
+                              verbose_name='Reparaturauftrag')
+    stock_article = models.ForeignKey(StockArticle, on_delete=models.PROTECT, verbose_name='Lagerartikel')
+    quantity = models.PositiveIntegerField(default=1, verbose_name='Anzahl')
 
     class Meta:
+        constraints = [
+            UniqueConstraint(fields=['order', 'stock_article'], name='unique_order_stock_article')
+        ]
+        ordering = ['order', 'stock_article']
         verbose_name = 'Artikel im Reparaturauftrag'
         verbose_name_plural = 'Artikel im Reparaturauftrag'
 
@@ -81,7 +170,7 @@ class RepairOrderArticle(models.Model):
         return self.stock_article.article.price * self.quantity
 
     def get_reservations_quantity(self):
-        return self.reservations.aggregate(quantity=Coalesce(models.Sum('quantity'), 0))['quantity']
+        return self.reservations.aggregate(quantity=Coalesce(Sum('quantity'), 0))['quantity']
 
     def get_missing_reservation_quantity(self):
         return self.quantity - self.get_reservations_quantity()
@@ -103,54 +192,64 @@ class ServiceCategory(models.Model):
 
 
 class AbstractService(models.Model):
-    category = models.ForeignKey(ServiceCategory, on_delete=models.PROTECT, related_name='services')
-    number = models.PositiveSmallIntegerField()
+    category = models.ForeignKey(ServiceCategory, on_delete=models.PROTECT, related_name='services',
+                                 verbose_name='Kategorie')
+    number = models.PositiveSmallIntegerField(verbose_name='Nummer')
     name = models.CharField(max_length=100)
-    normal_price = decimal_field_default()
-    ebike_price = decimal_field_default()
+    normal_price = models.DecimalField(decimal_places=2, max_digits=10, verbose_name='Normalpreis')
+    ebike_price = models.DecimalField(decimal_places=2, max_digits=10, verbose_name='E-Bike-Preis')
 
     class Meta:
         abstract = True
-        ordering = ['name']
+        ordering = ['category', 'name']
+        verbose_name = 'Service'
+        verbose_name_plural = 'Services'
 
     def __str__(self):
         return self.name
 
 
 class Service(AbstractService):
-    class Meta:
-        verbose_name = 'Service'
-        verbose_name_plural = 'Services'
+    pass
 
 
 class RepairOrderService(models.Model):
-    order = models.ForeignKey(RepairOrder, on_delete=models.CASCADE, related_name='services')
-    service = models.ForeignKey(Service, on_delete=models.PROTECT)
-    quantity = models.PositiveIntegerField(default=1)
+    order = models.ForeignKey(RepairOrder, on_delete=models.CASCADE, related_name='services',
+                              verbose_name='Reparaturauftrag')
+    service = models.ForeignKey(Service, on_delete=models.PROTECT, verbose_name='Service')
+    quantity = models.PositiveIntegerField(default=1, verbose_name='Anzahl')
 
     class Meta:
+        constraints = [
+            UniqueConstraint(fields=['order', 'service'], name='unique_order_service')
+        ]
+        ordering = ['order', 'service']
         verbose_name = 'Service im Reparaturauftrag'
         verbose_name_plural = 'Services im Reparaturauftrag'
 
     def __str__(self):
         return f'{self.service.name} x {self.quantity}'
 
-    def get_total(self) -> Decimal:
+    def get_price(self) -> Decimal:
         if self.order.is_ebike:
             return self.service.ebike_price * self.quantity
         return self.service.normal_price * self.quantity
 
 
-
 class StockArticleReservation(models.Model):
-    repair_order_article = models.ForeignKey(RepairOrderArticle, on_delete=models.CASCADE, related_name='reservations')
-    stock_article = models.ForeignKey(StockArticle, on_delete=models.CASCADE, related_name='reservations')
-    quantity = models.PositiveIntegerField(default=0)
+    repair_order_article = models.ForeignKey(RepairOrderArticle, on_delete=models.CASCADE, related_name='reservations',
+                                             verbose_name='Reparaturauftrag')
+    stock_article = models.ForeignKey(StockArticle, on_delete=models.CASCADE, related_name='reservations',
+                                      verbose_name='Lagerartikel')
+    quantity = models.PositiveIntegerField(default=0, verbose_name='Anzahl')
+    created = models.DateTimeField(auto_now_add=True, verbose_name='Erstellt')
+    updated = models.DateTimeField(auto_now=True, verbose_name='Aktualisiert')
 
     class Meta:
         constraints = [
-            models.UniqueConstraint(fields=['repair_order_article', 'stock_article'], name='unique_reservation_roa_and_sa'),
+            models.UniqueConstraint(fields=['repair_order_article', 'stock_article'], name='unique_roa_and_sa'),
         ]
+        ordering = ['repair_order_article', 'stock_article']
         verbose_name = 'Reservierter Lagerartikel'
         verbose_name_plural = 'Reservierte Lagerartikel'
 
@@ -159,45 +258,23 @@ class StockArticleReservation(models.Model):
 
 
 class StockArticleRequest(models.Model):
-    repair_order_article = models.ForeignKey(RepairOrderArticle, on_delete=models.CASCADE, related_name='requests')
-    stock_article = models.ForeignKey(StockArticle, on_delete=models.CASCADE, related_name='requests')
-    quantity = models.PositiveIntegerField(default=0)
-    created = models.DateTimeField(auto_now_add=True)
+    repair_order_article = models.ForeignKey(RepairOrderArticle, on_delete=models.CASCADE, related_name='requests',
+                                             verbose_name='Reparaturauftrag')
+    article = models.ForeignKey(Article, on_delete=models.CASCADE, related_name='requests', verbose_name='Artikel')
+    quantity = models.PositiveIntegerField(default=0, verbose_name='Anzahl')
+    created = models.DateTimeField(auto_now_add=True, verbose_name='Erstellt')
+    updated = models.DateTimeField(auto_now=True, verbose_name='Aktualisiert')
 
     class Meta:
         constraints = [
-            models.UniqueConstraint(fields=['repair_order_article', 'stock_article'], name='unique_request_roa_and_sa'),
+            models.UniqueConstraint(fields=['repair_order_article', 'article'], name='unique_roa_and_article'),
         ]
         ordering = ['created']
         verbose_name = 'Angeforderter Lagerartikel'
         verbose_name_plural = 'Angeforderte Lagerartikel'
 
     def __str__(self):
-        return f'{self.stock_article} angefordert für {self.repair_order_article} ({self.quantity})'
-
-
-class WorkRate(models.Model):
-    rate = models.DecimalField(max_digits=10, decimal_places=2, default=Decimal('50.00'),
-                               validators=[MinValueValidator(0)])
-    start_date = models.DateField(default=timezone.now)
-    end_date = models.DateField(blank=True, null=True)
-
-    class Meta:
-        verbose_name = 'Arbeitswertsatz'
-        verbose_name_plural = 'Arbeitswertsätze'
-        ordering = ['-start_date']
-
-    @staticmethod
-    def get_current_rate() -> Decimal:
-        current = WorkRate.objects.filter(
-            start_date__lte=timezone.now(),
-        ).order_by('-start_date').first()
-        if not current:
-            raise ValidationError('Arbeitswertsatz ist nicht gefunden.')
-        return current.rate
-
-    def __str__(self):
-        return f'{self.rate} €/h ab {self.start_date}'
+        return f'{self.article} angefordert für {self.repair_order_article} ({self.quantity})'
 
 
 class Invoice(models.Model):
